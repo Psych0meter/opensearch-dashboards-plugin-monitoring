@@ -1,0 +1,17 @@
+{
+  "name": "monitoring",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "yarn plugin-helpers build",
+    "plugin-helpers": "../../scripts/use_node ../../scripts/plugin_helpers",
+    "osd": "../../scripts/use_node ../../scripts/osd"
+  },
+  "dependencies": {
+    "@opensearch-project/oui": "^1.19.0",
+    "@visx/group": "^3.12.0",
+    "@visx/scale": "^3.12.0",
+    "@visx/shape": "^3.12.0",
+    "@visx/text": "^3.12.0"
+  }
+}

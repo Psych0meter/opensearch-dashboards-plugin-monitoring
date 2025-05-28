@@ -1,0 +1,7 @@
+{
+  "prefix": "monitoring",
+  "paths": {
+    "monitoring": "."
+  },
+  "translations": ["translations/ja-JP.json"]
+}
