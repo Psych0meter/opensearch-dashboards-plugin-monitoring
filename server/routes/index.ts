@@ -24,22 +24,21 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
           body: formattedNodes,
         });
       } catch (err) {
-        // Log the error for debugging purposes
-        console.error('Error fetching node stats:', err);
         return response.customError({
           statusCode: 500,
-          body: { message: 'Failed to fetch node stats' },
+          body: { message: err },
         });
       }
     }
   );
 
-    router.get(
-      {
-        path: '/api/' + PLUGIN_ID + '/cluster_health',
-        validate: false,
-      },
-      async (context, request, response) => {
+  router.get(
+    {
+      path: '/api/' + PLUGIN_ID + '/cluster_health',
+      validate: false,
+    },
+    async (context, request, response) => {
+      try {
         const result = await context.core.opensearch.client.asCurrentUser.transport.request({
           method: 'GET',
           path: '/_cluster/health',
@@ -49,8 +48,14 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
             data: result.body,
           },
         });
+      } catch (err) {
+        return response.customError({
+          statusCode: 500,
+          body: { message: err },
+        });
       }
-    );
+    }
+  );
 
   router.get(
     {
@@ -70,11 +75,9 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
           body: formatted,
         });
       } catch (err) {
-        // Log the error for debugging purposes
-        console.error('Error fetching cluster stats:', err);
         return response.customError({
           statusCode: 500,
-          body: { message: 'Failed to fetch cluster stats' },
+          body: { message: err },
         });
       }
     }
@@ -99,11 +102,9 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
           body: formatted,
         });
       } catch (err) {
-        // Log the error for debugging purposes
-        console.error('Error fetching recovery data:', err);
         return response.customError({
           statusCode: 500,
-          body: { message: 'Failed to fetch recovery data' },
+          body: { message: err },
         });
       }
     }
@@ -123,11 +124,9 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
           },
         });
       } catch (err) {
-        // Log the error for debugging purposes
-        console.error('Error fetching config data:', err);
         return response.customError({
           statusCode: 500,
-          body: { message: 'Failed to fetch config data' },
+          body: { message: err },
         });
       }
     }

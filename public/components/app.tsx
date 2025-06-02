@@ -217,13 +217,14 @@ export const MonitoringApp = ({
       const res = await http.get('/api/' + PLUGIN_ID + '/config');
       setClusterConfig(res.data);
     } catch (err) {
-      // Handle the error by logging it and showing a notification
-      if (err instanceof Error) {
-        console.error('Failed to fetch configuration:', err.message);
+      if (err?.body?.message) {
+        notifications.toasts.addDanger({
+          title: 'Failed to fetch configuration',
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
       } else {
-        console.error('Failed to fetch configuration:', err);
+        notifications.toasts.addDanger('Failed to fetch configuration');
       }
-      notifications.toasts.addDanger('Failed to fetch configuration');
     } finally {
       setLoading(false);
     }
@@ -236,12 +237,14 @@ export const MonitoringApp = ({
       const res = await http.get('/api/' + PLUGIN_ID + '/cluster_health');
       setClusterHealth(res.data);
     } catch (err) {
-      if (err instanceof Error) {
-        console.error('Failed to fetch cluster data:', err.message);
+      if (err?.body?.message) {
+        notifications.toasts.addDanger({
+          title: 'Failed to fetch cluster data',
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
       } else {
-        console.error('Failed to fetch cluster data:', err);
+        notifications.toasts.addDanger('Failed to fetch cluster data');
       }
-      notifications.toasts.addDanger('Failed to fetch cluster data');
     } finally {
       setLoading(false);
     }
@@ -254,12 +257,14 @@ export const MonitoringApp = ({
       const nodes = await http.get('/api/' + PLUGIN_ID + '/nodes_stats');
       setNodesData(nodes); // Already formatted
     } catch (err) {
-      if (err instanceof Error) {
-        console.error('Failed to fetch nodes data:', err.message);
+      if (err?.body?.message) {
+        notifications.toasts.addDanger({
+          title: 'Failed to fetch nodes data',
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
       } else {
-        console.error('Failed to fetch nodes data:', err);
+        notifications.toasts.addDanger('Failed to fetch nodes data');
       }
-      notifications.toasts.addDanger('Failed to fetch nodes data');
     } finally {
       setLoading(false);
     }
@@ -271,12 +276,14 @@ export const MonitoringApp = ({
       const recoveryData = await http.get('/api/' + PLUGIN_ID + '/recovery');
       setRecoveryData(recoveryData); // already formatted
     } catch (err) {
-      if (err instanceof Error) {
-        console.error('Failed to fetch recovery data:', err.message);
+      if (err?.body?.message) {
+        notifications.toasts.addDanger({
+          title: 'Failed to fetch recovery data',
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
       } else {
-        console.error('Failed to fetch recovery data:', err);
+        notifications.toasts.addDanger('Failed to fetch recovery data');
       }
-      notifications.toasts.addDanger('Failed to fetch recovery data');
     } finally {
       setLoading(false);
     }
@@ -288,12 +295,14 @@ export const MonitoringApp = ({
       const parsedData = await http.get('/api/' + PLUGIN_ID + '/cluster_stats');
       setClusterStats(parsedData); // Already parsed on the server
     } catch (err) {
-      if (err instanceof Error) {
-        console.error('Failed to fetch cluster stats:', err.message);
+      if (err?.body?.message) {
+        notifications.toasts.addDanger({
+          title: 'Failed to fetch cluster stats',
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
       } else {
-        console.error('Failed to fetch cluster stats:', err);
+        notifications.toasts.addDanger('Failed to fetch cluster stats');
       }
-      notifications.toasts.addDanger('Failed to fetch cluster stats');
     } finally {
       setLoading(false);
     }
