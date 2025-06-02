@@ -106,9 +106,9 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes }) => {
               y={0}
               width={zoneWidth}
               height={zoneHeightsMap[zone]}
-              fill="#ccc"
+              fill='#ccc'
               opacity={0.15}
-              stroke="#777"
+              stroke='#777'
               strokeWidth={2}
               rx={6}
               ry={6}
@@ -117,10 +117,10 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes }) => {
             <Text
               x={zoneWidth / 2}
               y={20}
-              fontWeight="bold"
+              fontWeight='bold'
               fontSize={16}
-              textAnchor="middle"
-              fill="#000"
+              textAnchor='middle'
+              fill='#000'
             >
               {`Zone: ${zone}`}
             </Text>
@@ -138,9 +138,9 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes }) => {
                     y={0}
                     width={zoneWidth - 2 * padding}
                     height={roleBlockHeight}
-                    fill="#8fa"
+                    fill='#8fa'
                     opacity={0.3}
-                    stroke="#484"
+                    stroke='#484'
                     strokeWidth={1.5}
                     rx={4}
                     ry={4}
@@ -150,8 +150,8 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes }) => {
                     y={16}
                     fontWeight={600}
                     fontSize={13}
-                    textAnchor="middle"
-                    fill="#000"
+                    textAnchor='middle'
+                    fill='#000'
                   >
                     {`Role: ${role}`}
                   </Text>
@@ -161,8 +161,8 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes }) => {
                       x={(zoneWidth - 2 * padding) / 2}
                       y={roleTitleHeight + rolePadding + i * hostSpacing}
                       fontSize={11}
-                      fill="#222"
-                      textAnchor="middle"
+                      fill='#222'
+                      textAnchor='middle'
                     >
                       {hostLabel}
                     </Text>

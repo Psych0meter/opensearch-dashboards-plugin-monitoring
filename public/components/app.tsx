@@ -92,10 +92,10 @@ interface ClusterStats {
   cluster_name: string;
   status: string;
   version: string;
-  uptime: number
+  uptime: number;
   nodes: {
    total: number; cluster_manager: number, coordinating_only: number, data: number, ingest: number, master: number, remote_cluster_client: number, search: number, warm: number;
-  }
+  };
   jvm: {
     mem: { used: number; total: number; percent: number };
     threads: number;
@@ -104,7 +104,7 @@ interface ClusterStats {
     used: number;
     total: number;
     percent: number;
-  }
+  };
   indices: {
     count: number;
     shards: {
@@ -201,11 +201,11 @@ export const MonitoringApp = ({
           title={count}
           description={
             <span>
-              <EuiIcon type="node" /> {label}
+              <EuiIcon type='node' /> {label}
             </span>
           }
-          descriptionElement="div"
-          textAlign="left"
+          descriptionElement='div'
+          textAlign='left'
         />
       </EuiFlexItem>
     );
@@ -273,8 +273,8 @@ export const MonitoringApp = ({
   const fetchRecovery = useCallback(async () => {
     try {
       setLoading(true);
-      const recoveryData = await http.get('/api/' + PLUGIN_ID + '/recovery');
-      setRecoveryData(recoveryData); // already formatted
+      const recovData = await http.get('/api/' + PLUGIN_ID + '/recovery');
+      setRecoveryData(recovData);
     } catch (err) {
       if (err?.body?.message) {
         notifications.toasts.addDanger({
@@ -293,7 +293,7 @@ export const MonitoringApp = ({
     try {
       setLoading(true);
       const parsedData = await http.get('/api/' + PLUGIN_ID + '/cluster_stats');
-      setClusterStats(parsedData); // Already parsed on the server
+      setClusterStats(parsedData);
     } catch (err) {
       if (err?.body?.message) {
         notifications.toasts.addDanger({
@@ -320,7 +320,7 @@ export const MonitoringApp = ({
     const actualNodeNames = actualNodes.map(node => node.name);
     const missingNodes = configNodes.filter(name => !actualNodeNames.includes(name));
     const extraNodes = actualNodeNames.filter(name => !configNodes.includes(name));
-    
+
     return { missingNodes, extraNodes };
   };
 
@@ -345,14 +345,14 @@ export const MonitoringApp = ({
       fetchConfig();
 
     }
-    
+
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [autoRefresh, fetchCluster, fetchNodes, fetchRecovery, fetchClusterStats, fetchConfig]);
 
   // Table columns configuration
-  const nodesColumns: Array<EuiBasicTableColumn<ClusterNode>> = [
+  const nodesColumns: EuiBasicTableColumn<ClusterNode>[] = [
     { field: 'name', name: 'Node Name', sortable: true },
     { field: 'host', name: 'Host', sortable: true },
     {
@@ -369,7 +369,7 @@ export const MonitoringApp = ({
           <EuiProgress
             value={cpu.percent}
             max={100}
-            size="s"
+            size='s'
             valueText={true}
             color={getUsageColor(cpu.percent)}
           />
@@ -384,7 +384,7 @@ export const MonitoringApp = ({
           <EuiProgress
             value={mem.percent.toFixed(2)}
             max={100}
-            size="s"
+            size='s'
             valueText={true}
             label={`${formatBytes(mem.used)} / ${formatBytes(mem.total)}`}
             color={getUsageColor(mem.percent)}
@@ -400,7 +400,7 @@ export const MonitoringApp = ({
           <EuiProgress
             value={swap.percent.toFixed(2)}
             max={100}
-            size="s"
+            size='s'
             valueText={true}
             label={`${formatBytes(swap.used)} / ${formatBytes(swap.total)}`}
             color={getUsageColor(swap.percent)}
@@ -416,7 +416,7 @@ export const MonitoringApp = ({
           <EuiProgress
             value={fs.percent.toFixed(2)}
             max={100}
-            size="s"
+            size='s'
             valueText={true}
             label={`${formatBytes(fs.used)} / ${formatBytes(fs.total)}`}
             color={getUsageColor(fs.percent)}
@@ -426,9 +426,7 @@ export const MonitoringApp = ({
     },
   ];
 
-
-  
-  const recoveryColumns: Array<EuiBasicTableColumn<ClusterIndex>> = [
+  const recoveryColumns: EuiBasicTableColumn<ClusterIndex>[] = [
     { field: 'index', name: 'Index', sortable: true },
     { field: 'shard', name: 'Shard', sortable: true },
     { field: 'type', name: 'Type', sortable: true },
@@ -444,13 +442,13 @@ export const MonitoringApp = ({
         const label = numeric === 100
           ? `${item.files_total}`
           : `${item.files_recovered} / ${item.files_total}`;
-        
+
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
               value={numeric.toFixed(2)}
               max={100}
-              size="s"
+              size='s'
               valueText
               label={label}
               color={getRecoveryColor(numeric)}
@@ -469,13 +467,13 @@ export const MonitoringApp = ({
         const label = numeric === 100
           ? `${formatBytes(Number(item.bytes_total))}`
           : `${formatBytes(Number(item.bytes_recovered))} / ${formatBytes(Number(item.bytes_total))}`;
-        
+
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
               value={numeric.toFixed(2)}
               max={100}
-              size="s"
+              size='s'
               valueText
               label={label}
               color={getRecoveryColor(numeric)}
@@ -499,7 +497,7 @@ export const MonitoringApp = ({
             <EuiProgress
               value={numeric.toFixed(2)}
               max={100}
-              size="s"
+              size='s'
               valueText
               label={label}
               color={getRecoveryColor(numeric)}
@@ -513,7 +511,7 @@ export const MonitoringApp = ({
       field: 'time',
       name: 'Elapsed Time',
       render: (time: number) => {
-        if (time == 0) return '-';
+        if (time === 0) return '-';
         return formatDuration(time);
       },
       sortable: true
@@ -529,22 +527,22 @@ export const MonitoringApp = ({
             showSearchBar={false}
             useDefaultBehaviors={true}
           />
-          
+
           <EuiPage>
-            <EuiPageBody component="main">
+            <EuiPageBody component='main'>
               <EuiPageHeader>
-                <EuiTitle size="l">
+                <EuiTitle size='l'>
                   <h1>
                     <FormattedMessage
-                      id="{PLUGIN_ID}pluginTitle"
-                      defaultMessage="{name}"
+                      id='{PLUGIN_ID}pluginTitle'
+                      defaultMessage='{name}'
                       values={{ name: PLUGIN_NAME }}
                     />
                   </h1>
                 </EuiTitle>
                 <EuiFlexItem grow={false}>
                   <EuiSwitch
-                    label="Auto-refresh (30s)"
+                    label='Auto-refresh (30s)'
                     checked={autoRefresh}
                     onChange={() => setAutoRefresh(!autoRefresh)}
                   />
@@ -556,28 +554,28 @@ export const MonitoringApp = ({
                 <EuiFlexItem>
                   <EuiPageContent>
                     <EuiPageContentHeader>
-                      <EuiTitle size="m">
+                      <EuiTitle size='m'>
                         <h2>
                           <FormattedMessage
-                            id="{PLUGIN_ID}clusterTitle"
-                            defaultMessage="Cluster"
+                            id='{PLUGIN_ID}clusterTitle'
+                            defaultMessage='Cluster'
                           />
                         </h2>
                       </EuiTitle>
                     </EuiPageContentHeader>
-                    
+
                     <EuiPageContentBody>
-                      <EuiFlexGroup wrap gutterSize="xl">
+                      <EuiFlexGroup wrap gutterSize='xl'>
                         <EuiFlexItem grow={false}>
                           <EuiStat
                             title={clusterHealth.cluster_name}
                             description={
                               <span>
-                                <EuiIcon type="layers" /> Name
+                                <EuiIcon type='layers' /> Name
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                         <EuiFlexItem grow={false}>
@@ -585,12 +583,12 @@ export const MonitoringApp = ({
                             title={clusterHealth.status}
                             description={
                               <span>
-                                <EuiIcon type="pulse" /> Status
+                                <EuiIcon type='pulse' /> Status
                               </span>
                             }
-                            descriptionElement="div"
+                            descriptionElement='div'
                             titleColor={getHealthColor(clusterHealth.status)}
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                         <EuiFlexItem grow={false}>
@@ -598,11 +596,11 @@ export const MonitoringApp = ({
                             title={formatDuration(clusterStats.uptime, 'm')}
                             description={
                               <span>
-                                <EuiIcon type="clock" /> Uptime
+                                <EuiIcon type='clock' /> Uptime
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                         <EuiFlexItem grow={false}>
@@ -610,29 +608,29 @@ export const MonitoringApp = ({
                             title={clusterStats.version}
                             description={
                               <span>
-                                <EuiIcon type="number" /> Version
+                                <EuiIcon type='number' /> Version
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                       </EuiFlexGroup>
 
-                      <EuiSpacer size="l" />
+                      <EuiSpacer size='l' />
 
                       <EuiPageContentHeader>
-                        <EuiTitle size="m">
+                        <EuiTitle size='m'>
                           <h2>
                             <FormattedMessage
-                              id="{PLUGIN_ID}nodesTitle"
-                              defaultMessage="Nodes"
+                              id='{PLUGIN_ID}nodesTitle'
+                              defaultMessage='Nodes'
                             />
                           </h2>
                         </EuiTitle>
                       </EuiPageContentHeader>
-                    
-                      <EuiFlexGroup wrap gutterSize="xl">
+
+                      <EuiFlexGroup wrap gutterSize='xl'>
 
                         <EuiFlexItem grow={false}>
                           <EuiStat
@@ -659,11 +657,11 @@ export const MonitoringApp = ({
                             }
                             description={
                               <span>
-                                <EuiIcon type="node" /> Active
-                                {((getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 || 
+                                <EuiIcon type='node' /> Active
+                                {((getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 ||
                                           getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.length > 0) && clusterConfig?.nodes?.length > 0) && (
                                   <EuiToolTip
-                                    position="bottom"
+                                    position='bottom'
                                     content={
                                       <div>
                                         {getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 && (
@@ -689,8 +687,8 @@ export const MonitoringApp = ({
                                       </div>
                                     }
                                   >
-                                    
-                                    <EuiIcon 
+
+                                    <EuiIcon
                                       type='alert'
                                       color='danger'
                                       style={{ marginLeft: '5px' }}
@@ -699,9 +697,9 @@ export const MonitoringApp = ({
                                 )}
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
-                            titleElement="div"
+                            descriptionElement='div'
+                            textAlign='left'
+                            titleElement='div'
                           />
                         </EuiFlexItem>
 
@@ -728,12 +726,12 @@ export const MonitoringApp = ({
                             }
                             description={
                               <span>
-                                <EuiIcon type="storage" /> Storage Usage
+                                <EuiIcon type='storage' /> Storage Usage
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
-                            titleElement="div"
+                            descriptionElement='div'
+                            textAlign='left'
+                            titleElement='div'
                           />
                         </EuiFlexItem>
 
@@ -750,12 +748,12 @@ export const MonitoringApp = ({
                             }
                             description={
                               <span>
-                                <EuiIcon type="memory" /> JVM Heap
+                                <EuiIcon type='memory' /> JVM Heap
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
-                            titleElement="div"
+                            descriptionElement='div'
+                            textAlign='left'
+                            titleElement='div'
                           />
                         </EuiFlexItem>
 
@@ -764,39 +762,39 @@ export const MonitoringApp = ({
                             title={clusterStats.jvm.threads}
                             description={
                               <span>
-                                <EuiIcon type="logstashIf" /> JVM Threads
+                                <EuiIcon type='logstashIf' /> JVM Threads
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                       </EuiFlexGroup>
 
-                      <EuiSpacer size="l" />
+                      <EuiSpacer size='l' />
 
                       <EuiPageContentHeader>
-                        <EuiTitle size="m">
+                        <EuiTitle size='m'>
                           <h2>
                             <FormattedMessage
-                              id="{PLUGIN_ID}shardsTitle"
-                              defaultMessage="Shards"
+                              id='{PLUGIN_ID}shardsTitle'
+                              defaultMessage='Shards'
                             />
                           </h2>
                         </EuiTitle>
                       </EuiPageContentHeader>
-                    
-                      <EuiFlexGroup wrap gutterSize="xl">
+
+                      <EuiFlexGroup wrap gutterSize='xl'>
                         <EuiFlexItem grow={false}>
                           <EuiStat
                             title={clusterStats.indices.shards.total}
                             description={
                               <span>
-                                <EuiIcon type="shard" /> Total Shards
+                                <EuiIcon type='shard' /> Total Shards
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -805,11 +803,11 @@ export const MonitoringApp = ({
                             title={clusterHealth.active_primary_shards.toString()}
                             description={
                               <span>
-                                <EuiIcon type="shard" /> Primary Shards
+                                <EuiIcon type='shard' /> Primary Shards
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -818,10 +816,10 @@ export const MonitoringApp = ({
                             title={(clusterHealth.active_shards - clusterHealth.active_primary_shards).toLocaleString()}
                                         description={
                                           <span>
-                                            <EuiIcon type="shard" /> Replica Shards
+                                            <EuiIcon type='shard' /> Replica Shards
                                           </span>
                                         }
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -830,10 +828,10 @@ export const MonitoringApp = ({
                             title={`${(clusterStats.indices.shards.replication * 100).toFixed(2)}%`}
                             description={
                               <span>
-                                <EuiIcon type="shard" /> Replication Factor
+                                <EuiIcon type='shard' /> Replication Factor
                               </span>
                             }
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -842,11 +840,11 @@ export const MonitoringApp = ({
                             title={clusterStats.indices.segments.count.toLocaleString()}
                             description={
                               <span>
-                                <EuiIcon type="partial" /> Segments
+                                <EuiIcon type='partial' /> Segments
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -855,12 +853,12 @@ export const MonitoringApp = ({
                             title={clusterHealth.unassigned_shards.toString()}
                             description={
                               <span>
-                                <EuiIcon type="shard" /> Unassigned Shards
+                                <EuiIcon type='shard' /> Unassigned Shards
                               </span>
                             }
-                            descriptionElement="div"
+                            descriptionElement='div'
                             titleColor={clusterHealth.unassigned_shards > 0 ? '#FF6666' : '#159D8D'}
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -869,12 +867,12 @@ export const MonitoringApp = ({
                             title={clusterHealth.initializing_shards.toString()}
                             description={
                               <span>
-                                <EuiIcon type="shard" /> Initializing Shards
+                                <EuiIcon type='shard' /> Initializing Shards
                               </span>
                             }
-                            descriptionElement="div"
+                            descriptionElement='div'
                             titleColor={clusterHealth.initializing_shards > 0 ? '#FF6666' : '#159D8D'}
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
 
@@ -883,40 +881,40 @@ export const MonitoringApp = ({
                             title={`${clusterHealth.active_shards_percent_as_number.toFixed(2)}%`}
                             description={
                               <span>
-                                <EuiIcon type="shard" /> Active Shards (%)
+                                <EuiIcon type='shard' /> Active Shards (%)
                               </span>
                             }
-                            descriptionElement="div"
+                            descriptionElement='div'
                             titleColor={clusterHealth.active_shards_percent_as_number < 100 ? '#FF6666' : '#159D8D'}
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                       </EuiFlexGroup>
 
-                      <EuiSpacer size="l" />
+                      <EuiSpacer size='l' />
 
                       <EuiPageContentHeader>
-                        <EuiTitle size="m">
+                        <EuiTitle size='m'>
                           <h2>
                             <FormattedMessage
-                              id="{PLUGIN_ID}indicesTitle"
-                              defaultMessage="Indices"
+                              id='{PLUGIN_ID}indicesTitle'
+                              defaultMessage='Indices'
                             />
                           </h2>
                         </EuiTitle>
                       </EuiPageContentHeader>
-                    
-                      <EuiFlexGroup wrap gutterSize="xl">
+
+                      <EuiFlexGroup wrap gutterSize='xl'>
                         <EuiFlexItem grow={false}>
                           <EuiStat
                             title={clusterStats.indices.count}
                             description={
                               <span>
-                                <EuiIcon type="indexSettings" /> Total Indices
+                                <EuiIcon type='indexSettings' /> Total Indices
                               </span>
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                         <EuiFlexItem grow={false}>
@@ -924,10 +922,10 @@ export const MonitoringApp = ({
                             title={clusterStats.indices.docs.count.toLocaleString()}
                             description={
                               <span>
-                                <EuiIcon type="document" /> Documents
+                                <EuiIcon type='document' /> Documents
                               </span>
                             }
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                         <EuiFlexItem grow={false}>
@@ -935,25 +933,25 @@ export const MonitoringApp = ({
                             title={clusterStats.indices.docs.deleted.toLocaleString()}
                             description={
                               <span>
-                                <EuiIcon type="document" /> Deleted Docs
+                                <EuiIcon type='document' /> Deleted Docs
                               </span>
                             }
-                            textAlign="left"
+                            textAlign='left'
                           />
                         </EuiFlexItem>
-                        
+
 
                         <EuiFlexItem grow={false}>
                           <EuiStat
                             title={formatBytes(clusterStats.indices.store.size_in_bytes)}
                             description={
                               <span>
-                                <EuiIcon type="storage" /> Storage Used
+                                <EuiIcon type='storage' /> Storage Used
                               </span>
-                              
+
                             }
-                            descriptionElement="div"
-                            textAlign="left"
+                            descriptionElement='div'
+                            textAlign='left'
                           />
                         </EuiFlexItem>
                       </EuiFlexGroup>
@@ -961,22 +959,22 @@ export const MonitoringApp = ({
                   </EuiPageContent>
                 </EuiFlexItem>
 
-                <EuiSpacer size="l" />
+                <EuiSpacer size='l' />
 
                 <EuiFlexItem grow={false}>
                   <EuiPageContent grow={false}>
                     <EuiPageContentHeader>
-                      <EuiTitle size="m">
+                      <EuiTitle size='m'>
                         <h2>
                           <FormattedMessage
-                            id="{PLUGIN_ID}graphViewTitle"
-                            defaultMessage="Graph View"
+                            id='{PLUGIN_ID}graphViewTitle'
+                            defaultMessage='Graph View'
                           />
                         </h2>
                       </EuiTitle>
                     </EuiPageContentHeader>
-                    
-                    <EuiPageContentBody>          
+
+                    <EuiPageContentBody>
                       <NetworkGraph nodes={nodesData} />
                     </EuiPageContentBody>
                   </EuiPageContent>
@@ -984,22 +982,22 @@ export const MonitoringApp = ({
               </EuiFlexGroup>
               )}
 
-              <EuiSpacer size="l" />
-              
+              <EuiSpacer size='l' />
+
               <EuiPageContent>
                 <EuiPageContentHeader>
                   <EuiTitle>
                     <h2>
                       <FormattedMessage
-                        id="{PLUGIN_ID}clusterNodesTitle"
-                        defaultMessage="Cluster Nodes"
+                        id='{PLUGIN_ID}clusterNodesTitle'
+                        defaultMessage='Cluster Nodes'
                       />
                     </h2>
                   </EuiTitle>
                 </EuiPageContentHeader>
                 <EuiPageContentBody>
                   <EuiInMemoryTable
-                    tableCaption="OpenSearch Cluster Nodes"
+                    tableCaption='OpenSearch Cluster Nodes'
                     items={nodesData}
                     columns={nodesColumns}
                     loading={loading}
@@ -1019,34 +1017,34 @@ export const MonitoringApp = ({
                 </EuiPageContentBody>
               </EuiPageContent>
 
-              <EuiSpacer size="l" />
+              <EuiSpacer size='l' />
 
               <EuiPageContent>
                 <EuiPageContentHeader>
                   <EuiTitle>
                     <h2>
                       <FormattedMessage
-                        id="{PLUGIN_ID}shardsRecoveryTitle"
-                        defaultMessage="Shards Recovery"
+                        id='{PLUGIN_ID}shardsRecoveryTitle'
+                        defaultMessage='Shards Recovery'
                       />
                     </h2>
                   </EuiTitle>
                 </EuiPageContentHeader>
                 <EuiPageContentBody>
-                  <EuiFlexGroup justifyContent="flexEnd" alignItems="center">
+                  <EuiFlexGroup justifyContent='flexEnd' alignItems='center'>
                     <EuiFlexItem grow={false}>
                       <EuiSwitch
-                        label="Hide completed items"
+                        label='Hide completed items'
                         checked={hideDone}
                         onChange={toggleHideDone}
                       />
                     </EuiFlexItem>
                   </EuiFlexGroup>
-                  
-                  <EuiSpacer size="m" />
-                  
+
+                  <EuiSpacer size='m' />
+
                   <EuiInMemoryTable
-                    tableCaption="OpenSearch Shards Recovery"
+                    tableCaption='OpenSearch Shards Recovery'
                     items={recoveryData}
                     columns={recoveryColumns}
                     loading={loading}
@@ -1062,9 +1060,9 @@ export const MonitoringApp = ({
                       onChange: ({ query }) => setSearchQuery(query ? query.text : ''),
                       box: {
                         incremental: true,
-                        placeholder: hideDone 
-                          ? "Search (excluding completed items)" 
-                          : "Search all items",
+                        placeholder: hideDone
+                          ? 'Search (excluding completed items)'
+                          : 'Search all items',
                       },
                     }}
                   />

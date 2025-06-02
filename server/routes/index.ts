@@ -2,7 +2,7 @@ import { IRouter } from '../../../../src/core/server';
 import { formatNodeStats } from './utils/formatNodeStats';
 import { formatRecoveryStats } from './utils/formatRecoveryStats';
 import { formatClusterStats } from './utils/formatClusterStats';
-import { PLUGIN_ID, PLUGIN_NAME } from '../../common';
+import { PLUGIN_ID } from '../../common';
 
 export function defineRoutes(router: IRouter, getConfig: () => any) {
   router.get(

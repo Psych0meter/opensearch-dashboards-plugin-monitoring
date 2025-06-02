@@ -31,5 +31,7 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
     return {};
   }
 
-  public stop() {}
+  public stop() {
+    // Stop logic if needed
+  }
 }
