@@ -88,6 +88,13 @@ monitoring:
   nodes: ["NODE1_FQDN", "NODE2_FQDN", "NODE3_FQDN", ...]
 ```
 
+## Required permissions
+
+- cluster:monitor/health
+- cluster:monitor/nodes/stats
+- cluster:monitor/stats
+- indices:monitor/recovery
+
 ---
 
 ## Installation
