@@ -2,6 +2,10 @@
 
 This repository contains the source code for the **monitoring** plugin for [OpenSearch Dashboards](https://github.com/opensearch-project/OpenSearch-Dashboards).
 
+## Screenshots
+
+![Screenshot v0.0.1](screenshots/screenshot_0.0.1.png)
+
 ## Prerequisites
 
 Before you begin, make sure you have the following installed:
