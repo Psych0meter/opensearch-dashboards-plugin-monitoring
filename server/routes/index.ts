@@ -4,131 +4,88 @@ import { formatRecoveryStats } from './utils/formatRecoveryStats';
 import { formatClusterStats } from './utils/formatClusterStats';
 import { PLUGIN_ID } from '../../common';
 
+/**
+ * Utility to simplify route creation.
+ *
+ * @param router - OpenSearch Dashboards router instance.
+ * @param path - API endpoint path.
+ * @param handler - Function that fetches and transforms the data.
+ */
+function createRoute(
+  router: IRouter,
+  path: string,
+  handler: (context: any) => Promise<any>
+) {
+  router.get(
+    { path: `/api/${PLUGIN_ID}${path}`, validate: false },
+    async (context, request, response) => {
+      try {
+        const body = await handler(context);
+        return response.ok({ body });
+      } catch (err) {
+        return response.customError({
+          statusCode: 500,
+          body: { message: err },
+        });
+      }
+    }
+  );
+}
+
+/**
+ * Registers API routes for the plugin.
+ *
+ * @param router - OpenSearch Dashboards router instance.
+ * @param getConfig - Function to retrieve plugin configuration.
+ */
 export function defineRoutes(router: IRouter, getConfig: () => any) {
-  router.get(
-    {
-      path: '/api/' + PLUGIN_ID + '/nodes_stats',
-      validate: false,
-    },
-    async (context, request, response) => {
-      try {
-        const result = await context.core.opensearch.client.asCurrentUser.transport.request({
-          method: 'GET',
-          path: '/_nodes/stats/fs,os',
-        });
+  // Nodes stats
+  createRoute(router, '/nodes_stats', async (context) => {
+    const result = await context.core.opensearch.client.asCurrentUser.transport.request({
+      method: 'GET',
+      path: '/_nodes/stats/fs,os',
+    });
+    return formatNodeStats(result.body?.nodes ?? {});
+  });
 
-        const rawNodes = result.body?.nodes ?? {};
-        const formattedNodes = formatNodeStats(rawNodes);
+  // Cluster health
+  createRoute(router, '/cluster_health', async (context) => {
+    const result = await context.core.opensearch.client.asCurrentUser.transport.request({
+      method: 'GET',
+      path: '/_cluster/health',
+    });
+    return { data: result.body };
+  });
 
-        return response.ok({
-          body: formattedNodes,
-        });
-      } catch (err) {
-        return response.customError({
-          statusCode: 500,
-          body: { message: err },
-        });
-      }
-    }
-  );
+  // Cluster stats
+  createRoute(router, '/cluster_stats', async (context) => {
+    const result = await context.core.opensearch.client.asCurrentUser.transport.request({
+      method: 'GET',
+      path: '/_cluster/stats',
+    });
+    return formatClusterStats(result.body);
+  });
 
-  router.get(
-    {
-      path: '/api/' + PLUGIN_ID + '/cluster_health',
-      validate: false,
-    },
-    async (context, request, response) => {
-      try {
-        const result = await context.core.opensearch.client.asCurrentUser.transport.request({
-          method: 'GET',
-          path: '/_cluster/health',
-        });
-        return response.ok({
-          body: {
-            data: result.body,
-          },
-        });
-      } catch (err) {
-        return response.customError({
-          statusCode: 500,
-          body: { message: err },
-        });
-      }
-    }
-  );
+  // Recovery
+  createRoute(router, '/recovery', async (context) => {
+    const result = await context.core.opensearch.client.asCurrentUser.transport.request({
+      method: 'GET',
+      path: '/_recovery?detailed',
+    });
+    return formatRecoveryStats(result.body ?? {});
+  });
 
-  router.get(
-    {
-      path: '/api/' + PLUGIN_ID + '/cluster_stats',
-      validate: false,
-    },
-    async (context, request, response) => {
-      try {
-        const result = await context.core.opensearch.client.asCurrentUser.transport.request({
-          method: 'GET',
-          path: '/_cluster/stats',
-        });
+  // Plugin config
+  createRoute(router, '/config', async () => {
+    return { data: getConfig() ?? [] };
+  });
 
-        const formatted = formatClusterStats(result.body);
-
-        return response.ok({
-          body: formatted,
-        });
-      } catch (err) {
-        return response.customError({
-          statusCode: 500,
-          body: { message: err },
-        });
-      }
-    }
-  );
-
-  router.get(
-    {
-      path: '/api/' + PLUGIN_ID + '/recovery',
-      validate: false,
-    },
-    async (context, request, response) => {
-      try {
-        const result = await context.core.opensearch.client.asCurrentUser.transport.request({
-          method: 'GET',
-          path: '/_recovery?detailed',
-        });
-
-        const rawData = result.body ?? {};
-        const formatted = formatRecoveryStats(rawData);
-
-        return response.ok({
-          body: formatted,
-        });
-      } catch (err) {
-        return response.customError({
-          statusCode: 500,
-          body: { message: err },
-        });
-      }
-    }
-  );
-
-  router.get(
-    {
-      path: '/api/' + PLUGIN_ID + '/config',
-      validate: false,
-    },
-    async (context, request, response) => {
-      try {
-        const config = getConfig();
-        return response.ok({
-          body: {
-            data: config ?? [],
-          },
-        });
-      } catch (err) {
-        return response.customError({
-          statusCode: 500,
-          body: { message: err },
-        });
-      }
-    }
-  );
+  // Snapshots
+  createRoute(router, '/snapshots', async (context) => {
+    const result = await context.core.opensearch.client.asCurrentUser.transport.request({
+      method: 'GET',
+      path: '/_snapshot/_status',
+    });
+    return result.body ?? {};
+  });
 }
