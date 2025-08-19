@@ -94,6 +94,7 @@ monitoring:
 
 ## Required permissions
 
+- cluster:admin/snapshot/status
 - cluster:monitor/health
 - cluster:monitor/nodes/stats
 - cluster:monitor/stats
