@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "yarn plugin-helpers build",
-    "plugin-helpers": "../../scripts/use_node ../../scripts/plugin_helpers",
-    "osd": "../../scripts/use_node ../../scripts/osd",
+    "build": "node ../../scripts/plugin_helpers build",
+    "plugin-helpers": "node ../../scripts/plugin_helpers",
+    "osd": "node ../../scripts/osd",
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
@@ -15,9 +15,9 @@
     "@visx/text": "^3.12.0"
   },
   "devDependencies": {
-    "@types/node": "^22.15.29",
-    "@typescript-eslint/eslint-plugin": "^8.33.0",
-    "@typescript-eslint/parser": "^8.33.0",
-    "eslint": "^9.28.0"
+    "@types/node": "~20.10.5",
+    "@typescript-eslint/eslint-plugin": "^3.10.0",
+    "@typescript-eslint/parser": "^3.10.0",
+    "eslint": "^6.8.0"
   }
 }
