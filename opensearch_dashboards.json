@@ -1,7 +1,7 @@
 {
-  "id": "monitoringCustom",
+  "id": "opensearch-dashboards-plugin-monitoring",
   "version": "1.0.0",
-  "opensearchDashboardsVersion": "3.5.0",
+  "opensearchDashboardsVersion": "3.6.0",
   "server": true,
   "ui": true,
   "requiredPlugins": ["navigation"],
