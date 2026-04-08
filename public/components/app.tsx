@@ -427,12 +427,18 @@ export const MonitoringApp = ({
     );
   };
 
-  // Data fetching functions
+    // Data fetching functions
   const fetchConfig = useCallback(async () => {
     try {
       setClusterConfigLoading(true);
       const res = await http.get(`/api/${PLUGIN_ID}/config`);
-      setClusterConfig(res.data);
+      
+      // Extract the nodes array from the 'data' property of the response
+      if (res && res.data && Array.isArray(res.data.nodes)) {
+        setClusterConfig({ nodes: res.data.nodes });
+      } else {
+        setClusterConfig({ nodes: [] });
+      }
     } catch (err) {
       notifications.toasts.addDanger({
         title: 'Failed to fetch configuration',

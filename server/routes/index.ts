@@ -86,12 +86,12 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
     return formatRecoveryStats(result.body ?? {});
   });
 
-  // Plugin config - MODIFIED
+  // Plugin config
   createRoute(router, '/config', async () => {
     const globalConfig = getConfig() || {};
     
-    // Extract opensearch.hosts (also checking elasticsearch.hosts just in case)
-    const rawHosts = globalConfig.opensearch?.hosts || globalConfig.elasticsearch?.hosts || [];
+    // Extract opensearch.hosts
+    const rawHosts = globalConfig.opensearch?.hosts || [];
     
     // Ensure it's an array (sometimes users put a single string in the yml)
     const hostsArray = Array.isArray(rawHosts) ? rawHosts : [rawHosts];
