@@ -10,10 +10,6 @@ on:
         description: 'Target OpenSearch Dashboards version'
         required: true
         type: string
-      plugin_version:
-        description: 'Plugin version override'
-        required: false
-        type: string
 
 jobs:
   build-and-release:
@@ -24,49 +20,59 @@ jobs:
     steps:
       - name: Checkout Plugin
         uses: actions/checkout@v4
+        with:
+          path: monitoring-plugin
 
       - name: Configure Versions
         id: versions
         run: |
+          cd monitoring-plugin
           DEFAULT_OSD_VER=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)
-          DEFAULT_PLUGIN_VER=$(jq -r '.version' opensearch_dashboards.json)
           
           OSD_VER="${{ inputs.osd_version }}"
           OSD_VER="${OSD_VER:-$DEFAULT_OSD_VER}"
-          PLUGIN_VER="${{ inputs.plugin_version }}"
-          PLUGIN_VER="${PLUGIN_VER:-$DEFAULT_PLUGIN_VER}"
           
+          # Parse tag if applicable (v1.0.0-osd3.6.0)
           if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" == *-osd* ]]; then
-            PLUGIN_VER=$(echo "${{ github.ref_name }}" | sed -E 's/^v?([^-]+)-osd.*/\1/')
             OSD_VER=$(echo "${{ github.ref_name }}" | sed -E 's/.*-osd(.*)/\1/')
           fi
 
-          # Update the JSON file
-          jq --arg osd "$OSD_VER" --arg pv "$PLUGIN_VER" \
-            '.opensearchDashboardsVersion = $osd | .version = $pv' \
-            opensearch_dashboards.json > tmp.json && mv tmp.json opensearch_dashboards.json
-            
           echo "osd_version=$OSD_VER" >> $GITHUB_OUTPUT
           echo "release_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+
+      # Shallow clone OSD (depth 1) is MUCH faster than a full clone
+      - name: Checkout OpenSearch Dashboards (Shallow)
+        uses: actions/checkout@v4
+        with:
+          repository: opensearch-project/OpenSearch-Dashboards
+          ref: ${{ steps.versions.outputs.osd_version }}
+          path: OpenSearch-Dashboards
+          fetch-depth: 1 
+
+      - name: Move Plugin to OSD
+        run: |
+          mkdir -p OpenSearch-Dashboards/plugins
+          mv monitoring-plugin OpenSearch-Dashboards/plugins/monitoring
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 18 # Standard for OSD 3.x
 
-      - name: Install Build Tooling
+      # Scoped Bootstrap: Only installs what is needed for your plugin
+      - name: Scoped Bootstrap
         run: |
-          npm install -g yarn
-          yarn add @osd/plugin-helpers@${{ steps.versions.outputs.osd_version }} --dev
+          cd OpenSearch-Dashboards
+          yarn osd bootstrap --scope monitoring
 
       - name: Build Plugin
         run: |
-          # Use the locally installed helper to build
-          ./node_modules/.bin/osd-plugin-helpers build
+          cd OpenSearch-Dashboards/plugins/monitoring
+          yarn plugin-helpers build
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.versions.outputs.release_tag }}
-          files: build/*.zip
+          files: OpenSearch-Dashboards/plugins/monitoring/build/*.zip
           generate_release_notes: true
