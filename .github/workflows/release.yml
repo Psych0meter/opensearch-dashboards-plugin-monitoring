@@ -1,0 +1,114 @@
+name: Build and Release Plugin
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      osd_version:
+        description: 'Target OpenSearch Dashboards version (e.g., 3.6.0)'
+        required: true
+        type: string
+      plugin_version:
+        description: 'Plugin version override (leave empty to use current version)'
+        required: false
+        type: string
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # Checkout the plugin's code into a specific directory
+      - name: Checkout Plugin
+        uses: actions/checkout@v4
+        with:
+          path: monitoring-plugin
+
+      # Extract versions and update opensearch_dashboards.json dynamically
+      - name: Configure Versions
+        id: versions
+        run: |
+          cd monitoring-plugin
+          
+          # Read default versions from the file
+          DEFAULT_OSD_VER=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)
+          DEFAULT_PLUGIN_VER=$(jq -r '.version' opensearch_dashboards.json)
+          
+          # Apply inputs if triggered by workflow_dispatch, otherwise use defaults
+          OSD_VER="${{ inputs.osd_version || '' }}"
+          OSD_VER="${OSD_VER:-$DEFAULT_OSD_VER}"
+          
+          PLUGIN_VER="${{ inputs.plugin_version || '' }}"
+          PLUGIN_VER="${PLUGIN_VER:-$DEFAULT_PLUGIN_VER}"
+          
+          echo "Building Plugin $PLUGIN_VER for OpenSearch Dashboards $OSD_VER"
+          
+          # Overwrite the json file with the target versions
+          jq --arg osd "$OSD_VER" --arg pv "$PLUGIN_VER" \
+            '.opensearchDashboardsVersion = $osd | .version = $pv' \
+            opensearch_dashboards.json > tmp.json && mv tmp.json opensearch_dashboards.json
+            
+          # Expose to other steps
+          echo "osd_version=$OSD_VER" >> $GITHUB_OUTPUT
+          echo "plugin_version=$PLUGIN_VER" >> $GITHUB_OUTPUT
+          
+          # Decide the Release tag name
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            echo "release_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            # For manual dispatches, create a custom tag so it doesn't collide
+            echo "release_tag=v${PLUGIN_VER}-osd${OSD_VER}" >> $GITHUB_OUTPUT
+          fi
+
+      # Checkout OpenSearch Dashboards at the exact target version
+      - name: Checkout OpenSearch Dashboards
+        uses: actions/checkout@v4
+        with:
+          repository: opensearch-project/OpenSearch-Dashboards
+          ref: ${{ steps.versions.outputs.osd_version }}
+          path: OpenSearch-Dashboards
+
+      # Move plugin into the OSD plugins directory
+      - name: Move Plugin to OSD
+        run: |
+          mkdir -p OpenSearch-Dashboards/plugins
+          mv monitoring-plugin OpenSearch-Dashboards/plugins/monitoring
+
+      # Get correct Node.js version directly from OSD's config
+      - name: Read Node.js version
+        id: node_version
+        run: |
+          NODE_VER=$(cat OpenSearch-Dashboards/.node-version)
+          echo "node_version=$NODE_VER" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node_version.outputs.node_version }}
+
+      # Bootstrap the environment
+      - name: Bootstrap OpenSearch Dashboards
+        run: |
+          cd OpenSearch-Dashboards
+          yarn osd bootstrap
+
+      # Build the plugin zip file
+      - name: Build Plugin
+        run: |
+          cd OpenSearch-Dashboards/plugins/monitoring
+          yarn plugin-helpers build
+
+      # Create GitHub Release and Upload Artifact
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.versions.outputs.release_tag }}
+          name: Release ${{ steps.versions.outputs.release_tag }}
+          files: OpenSearch-Dashboards/plugins/monitoring/build/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
