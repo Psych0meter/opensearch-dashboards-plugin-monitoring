@@ -17,7 +17,7 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
 
   constructor(private readonly initializerContext: PluginInitializerContext) {
     this.logger = this.initializerContext.logger.get();
-    this.config$ = this.initializerContext.config.create();
+    this.config$ = this.initializerContext.config.legacy.globalConfig$;
   }
 
   public setup(core: CoreSetup) {
@@ -27,7 +27,7 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
     // Subscribe once and store the config for later use
     this.config$.subscribe(config => {
       this.config = config;
-      this.logger.info(`monitoring config at setup: ${JSON.stringify(config)}`);
+      this.logger.info(`monitoring global config at setup loaded.`);
     });
 
     // Pass the config to your routes or use it elsewhere

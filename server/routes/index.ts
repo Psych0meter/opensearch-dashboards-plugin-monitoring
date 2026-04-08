@@ -33,10 +33,21 @@ function createRoute(
 }
 
 /**
+ * Helper to clean URL strings: 
+ * "https://HOST:9200" -> "HOST"
+ */
+const cleanHost = (host: string) => {
+  return host
+    .replace(/^https?:\/\//, '') // Remove http:// or https://
+    .replace(/:\d+$/, '')        // Remove :port
+    .replace(/\/$/, '');         // Remove trailing slash if present
+};
+
+/**
  * Registers API routes for the plugin.
  *
  * @param router - OpenSearch Dashboards router instance.
- * @param getConfig - Function to retrieve plugin configuration.
+ * @param getConfig - Function to retrieve global configuration.
  */
 export function defineRoutes(router: IRouter, getConfig: () => any) {
   // Nodes stats
@@ -75,9 +86,21 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
     return formatRecoveryStats(result.body ?? {});
   });
 
-  // Plugin config
+  // Plugin config - MODIFIED
   createRoute(router, '/config', async () => {
-    return { data: getConfig() ?? [] };
+    const globalConfig = getConfig() || {};
+    
+    // Extract opensearch.hosts (also checking elasticsearch.hosts just in case)
+    const rawHosts = globalConfig.opensearch?.hosts || globalConfig.elasticsearch?.hosts || [];
+    
+    // Ensure it's an array (sometimes users put a single string in the yml)
+    const hostsArray = Array.isArray(rawHosts) ? rawHosts : [rawHosts];
+
+    // Clean the hosts strings
+    const cleanedNodes = hostsArray.map((h: string) => cleanHost(h));
+
+    // Structure matches your frontend expected payload (config.data.nodes)
+    return { data: { nodes: cleanedNodes } };
   });
 
   // Snapshots
