@@ -550,9 +550,27 @@ export const MonitoringApp = ({
    * @returns Object with missingNodes and extraNodes arrays
    */
   const getNodeDifferences = (configNodes: string[], actualNodes: ClusterNode[]) => {
+    // 1. Ensure we have arrays to work with
+    const safeConfigNodes = configNodes || [];
     const actualNodeNames = actualNodes.map(node => node.name);
-    const missingNodes = configNodes.filter(name => !actualNodeNames.includes(name));
-    const extraNodes = actualNodeNames.filter(name => !configNodes.includes(name));
+
+    // 2. DEBUG LOGS
+    console.log('--- Debugging Node Comparison ---');
+    console.log('From Config (opensearch.hosts):', safeConfigNodes);
+    console.log('From API (_nodes/stats):', actualNodeNames);
+    
+    // Check for hidden issues like extra spaces or casing
+    if (safeConfigNodes.length > 0 && actualNodeNames.length > 0) {
+        console.log('Example Config Node Length:', safeConfigNodes[0].length);
+        console.log('Example Actual Node Length:', actualNodeNames[0].length);
+    }
+
+    const missingNodes = safeConfigNodes.filter(name => !actualNodeNames.includes(name));
+    const extraNodes = actualNodeNames.filter(name => !safeConfigNodes.includes(name));
+
+    console.log('Result - Missing:', missingNodes);
+    console.log('Result - Extra:', extraNodes);
+    console.log('---------------------------------');
 
     return { missingNodes, extraNodes };
   };
