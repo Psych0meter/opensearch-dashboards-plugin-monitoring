@@ -1,5 +1,5 @@
 {
-  "id": "opensearch-dashboards-plugin-monitoring",
+  "id": "monitoringPlugin",
   "version": "1.0.0",
   "opensearchDashboardsVersion": "3.6.0",
   "server": true,
