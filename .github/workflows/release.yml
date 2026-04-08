@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       osd_version:
-        description: 'Target OpenSearch Dashboards version (e.g., 3.6.0)'
+        description: 'Target OpenSearch Dashboards version'
         required: true
         type: string
       plugin_version:
-        description: 'Plugin version override (leave empty to use current version)'
+        description: 'Plugin version override'
         required: false
         type: string
 
@@ -22,107 +22,51 @@ jobs:
       contents: write
 
     steps:
-      # Checkout the plugin's code into a specific directory
       - name: Checkout Plugin
         uses: actions/checkout@v4
-        with:
-          path: monitoring-plugin
 
-      # Extract versions and update opensearch_dashboards.json dynamically
       - name: Configure Versions
         id: versions
         run: |
-          cd monitoring-plugin
-          
-          # Read baseline defaults from the file
           DEFAULT_OSD_VER=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)
           DEFAULT_PLUGIN_VER=$(jq -r '.version' opensearch_dashboards.json)
           
-          OSD_VER="$DEFAULT_OSD_VER"
-          PLUGIN_VER="$DEFAULT_PLUGIN_VER"
-          RELEASE_TAG="${{ github.ref_name }}"
+          OSD_VER="${{ inputs.osd_version }}"
+          OSD_VER="${OSD_VER:-$DEFAULT_OSD_VER}"
+          PLUGIN_VER="${{ inputs.plugin_version }}"
+          PLUGIN_VER="${PLUGIN_VER:-$DEFAULT_PLUGIN_VER}"
           
-          # Handle Workflow Dispatch (Manual Trigger)
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            OSD_VER="${{ inputs.osd_version || '' }}"
-            OSD_VER="${OSD_VER:-$DEFAULT_OSD_VER}"
-            
-            PLUGIN_VER="${{ inputs.plugin_version || '' }}"
-            PLUGIN_VER="${PLUGIN_VER:-$DEFAULT_PLUGIN_VER}"
-            
-            RELEASE_TAG="v${PLUGIN_VER}-osd${OSD_VER}"
+          if [[ "${{ github.ref_type }}" == "tag" && "${{ github.ref_name }}" == *-osd* ]]; then
+            PLUGIN_VER=$(echo "${{ github.ref_name }}" | sed -E 's/^v?([^-]+)-osd.*/\1/')
+            OSD_VER=$(echo "${{ github.ref_name }}" | sed -E 's/.*-osd(.*)/\1/')
           fi
-          
-          # Handle Tag Push (Parse v1.0.0-osd3.6.0)
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            TAG_NAME="${{ github.ref_name }}"
-            
-            # Check if tag matches the pattern *-osd*
-            if [[ "$TAG_NAME" == *-osd* ]]; then
-              # Extract plugin version (removes leading 'v' and everything from '-osd' onward)
-              PLUGIN_VER=$(echo "$TAG_NAME" | sed -E 's/^v?([^-]+)-osd.*/\1/')
-              # Extract OSD version (grabs everything after '-osd')
-              OSD_VER=$(echo "$TAG_NAME" | sed -E 's/.*-osd(.*)/\1/')
-            fi
-          fi
-          
-          echo "Building Plugin $PLUGIN_VER for OpenSearch Dashboards $OSD_VER"
-          
-          # Overwrite the json file with the target versions
+
+          # Update the JSON file
           jq --arg osd "$OSD_VER" --arg pv "$PLUGIN_VER" \
             '.opensearchDashboardsVersion = $osd | .version = $pv' \
             opensearch_dashboards.json > tmp.json && mv tmp.json opensearch_dashboards.json
             
-          # Expose variables to subsequent steps
           echo "osd_version=$OSD_VER" >> $GITHUB_OUTPUT
-          echo "plugin_version=$PLUGIN_VER" >> $GITHUB_OUTPUT
-          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-
-      # Checkout OpenSearch Dashboards at the exact target version
-      - name: Checkout OpenSearch Dashboards
-        uses: actions/checkout@v4
-        with:
-          repository: opensearch-project/OpenSearch-Dashboards
-          ref: ${{ steps.versions.outputs.osd_version }}
-          path: OpenSearch-Dashboards
-
-      # Move plugin into the OSD plugins directory
-      - name: Move Plugin to OSD
-        run: |
-          mkdir -p OpenSearch-Dashboards/plugins
-          mv monitoring-plugin OpenSearch-Dashboards/plugins/monitoring
-
-      # Get correct Node.js version directly from OSD's config
-      - name: Read Node.js version
-        id: node_version
-        run: |
-          NODE_VER=$(cat OpenSearch-Dashboards/.node-version)
-          echo "node_version=$NODE_VER" >> $GITHUB_OUTPUT
+          echo "release_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ steps.node_version.outputs.node_version }}
+          node-version: 18
 
-      # Bootstrap the environment
-      - name: Bootstrap OpenSearch Dashboards
+      - name: Install Build Tooling
         run: |
-          cd OpenSearch-Dashboards
-          yarn osd bootstrap
+          npm install -g yarn
+          yarn add @osd/plugin-helpers@${{ steps.versions.outputs.osd_version }} --dev
 
-      # Build the plugin zip file
       - name: Build Plugin
         run: |
-          cd OpenSearch-Dashboards/plugins/monitoring
-          yarn plugin-helpers build
+          # Use the locally installed helper to build
+          ./node_modules/.bin/osd-plugin-helpers build
 
-      # Create GitHub Release and Upload Artifact
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.versions.outputs.release_tag }}
-          name: Release ${{ steps.versions.outputs.release_tag }}
-          files: OpenSearch-Dashboards/plugins/monitoring/build/*.zip
-          draft: false
-          prerelease: false
+          files: build/*.zip
           generate_release_notes: true
