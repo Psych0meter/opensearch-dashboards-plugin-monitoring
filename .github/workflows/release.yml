@@ -34,16 +34,37 @@ jobs:
         run: |
           cd monitoring-plugin
           
-          # Read default versions from the file
+          # Read baseline defaults from the file
           DEFAULT_OSD_VER=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)
           DEFAULT_PLUGIN_VER=$(jq -r '.version' opensearch_dashboards.json)
           
-          # Apply inputs if triggered by workflow_dispatch, otherwise use defaults
-          OSD_VER="${{ inputs.osd_version || '' }}"
-          OSD_VER="${OSD_VER:-$DEFAULT_OSD_VER}"
+          OSD_VER="$DEFAULT_OSD_VER"
+          PLUGIN_VER="$DEFAULT_PLUGIN_VER"
+          RELEASE_TAG="${{ github.ref_name }}"
           
-          PLUGIN_VER="${{ inputs.plugin_version || '' }}"
-          PLUGIN_VER="${PLUGIN_VER:-$DEFAULT_PLUGIN_VER}"
+          # Handle Workflow Dispatch (Manual Trigger)
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            OSD_VER="${{ inputs.osd_version || '' }}"
+            OSD_VER="${OSD_VER:-$DEFAULT_OSD_VER}"
+            
+            PLUGIN_VER="${{ inputs.plugin_version || '' }}"
+            PLUGIN_VER="${PLUGIN_VER:-$DEFAULT_PLUGIN_VER}"
+            
+            RELEASE_TAG="v${PLUGIN_VER}-osd${OSD_VER}"
+          fi
+          
+          # Handle Tag Push (Parse v1.0.0-osd3.6.0)
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+            
+            # Check if tag matches the pattern *-osd*
+            if [[ "$TAG_NAME" == *-osd* ]]; then
+              # Extract plugin version (removes leading 'v' and everything from '-osd' onward)
+              PLUGIN_VER=$(echo "$TAG_NAME" | sed -E 's/^v?([^-]+)-osd.*/\1/')
+              # Extract OSD version (grabs everything after '-osd')
+              OSD_VER=$(echo "$TAG_NAME" | sed -E 's/.*-osd(.*)/\1/')
+            fi
+          fi
           
           echo "Building Plugin $PLUGIN_VER for OpenSearch Dashboards $OSD_VER"
           
@@ -52,17 +73,10 @@ jobs:
             '.opensearchDashboardsVersion = $osd | .version = $pv' \
             opensearch_dashboards.json > tmp.json && mv tmp.json opensearch_dashboards.json
             
-          # Expose to other steps
+          # Expose variables to subsequent steps
           echo "osd_version=$OSD_VER" >> $GITHUB_OUTPUT
           echo "plugin_version=$PLUGIN_VER" >> $GITHUB_OUTPUT
-          
-          # Decide the Release tag name
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            echo "release_tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          else
-            # For manual dispatches, create a custom tag so it doesn't collide
-            echo "release_tag=v${PLUGIN_VER}-osd${OSD_VER}" >> $GITHUB_OUTPUT
-          fi
+          echo "release_tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
 
       # Checkout OpenSearch Dashboards at the exact target version
       - name: Checkout OpenSearch Dashboards
