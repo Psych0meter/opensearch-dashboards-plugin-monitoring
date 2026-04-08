@@ -27,7 +27,10 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
     // Subscribe once and store the config for later use
     this.config$.subscribe(config => {
       this.config = config;
-      this.logger.info(`monitoring global config at setup loaded.`);
+      this.logger.info(`Global config keys available: ${Object.keys(config).join(', ')}`);
+      if (config.opensearch) {
+        this.logger.info(`Opensearch config found: ${JSON.stringify(config.opensearch)}`);
+      }
     });
 
     // Pass the config to your routes or use it elsewhere
