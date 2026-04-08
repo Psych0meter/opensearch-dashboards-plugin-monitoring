@@ -1,7 +1,4 @@
-export function getPercentage(used: number, total: number): number {
-  if (!total) return 0;
-  return (used / total) * 100;
-}
+import { calculatePercentage } from './common';
 
 export function formatClusterStats(rawData: any) {
   return {
@@ -26,7 +23,7 @@ export function formatClusterStats(rawData: any) {
       mem: {
         used: rawData.nodes.jvm.mem.heap_used_in_bytes,
         total: rawData.nodes.jvm.mem.heap_max_in_bytes,
-        percent: getPercentage(
+        percent: calculatePercentage(
           rawData.nodes.jvm.mem.heap_used_in_bytes,
           rawData.nodes.jvm.mem.heap_max_in_bytes
         ),
@@ -38,7 +35,7 @@ export function formatClusterStats(rawData: any) {
       used:
         rawData.nodes.fs.total_in_bytes - rawData.nodes.fs.free_in_bytes,
       total: rawData.nodes.fs.total_in_bytes,
-      percent: getPercentage(
+      percent: calculatePercentage(
         rawData.nodes.fs.total_in_bytes - rawData.nodes.fs.free_in_bytes,
         rawData.nodes.fs.total_in_bytes
       ),

@@ -1,6 +1,4 @@
-function getPercentage(used: number, total: number): number {
-  return total > 0 ? (used / total) * 100 : 0;
-}
+import { calculatePercentage } from './common';
 
 export function formatNodeStats(nodesObj: any): any[] {
   return Object.entries(nodesObj).map(([id, node]: any) => {
@@ -24,17 +22,17 @@ export function formatNodeStats(nodesObj: any): any[] {
       mem: {
         total: totalMem,
         used: usedMem,
-        percent: getPercentage(usedMem, totalMem),
+        percent: calculatePercentage(usedMem, totalMem),
       },
       swap: {
         total: totalSwap,
         used: usedSwap,
-        percent: getPercentage(usedSwap, totalSwap),
+        percent: calculatePercentage(usedSwap, totalSwap),
       },
       fs: {
         total: totalFs,
         used: usedFs,
-        percent: getPercentage(usedFs, totalFs),
+        percent: calculatePercentage(usedFs, totalFs),
       },
     };
   });
