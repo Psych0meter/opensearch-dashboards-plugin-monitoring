@@ -18,14 +18,15 @@ function createRoute(
 ) {
   router.get(
     { path: `/api/${PLUGIN_ID}${path}`, validate: false },
-    async (context, request, response) => {
+    async (context: any, _request: any, response: any) => {
       try {
         const body = await handler(context);
         return response.ok({ body });
-      } catch (err) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         return response.customError({
           statusCode: 500,
-          body: { message: err },
+          body: { message },
         });
       }
     }
@@ -41,11 +42,21 @@ function createRoute(
 export function defineRoutes(router: IRouter, getConfig: () => any) {
   // Nodes stats
   createRoute(router, '/nodes_stats', async (context) => {
-    const result = await context.core.opensearch.client.asCurrentUser.transport.request({
-      method: 'GET',
-      path: '/_nodes/stats/fs,os',
-    });
-    return formatNodeStats(result.body?.nodes ?? {});
+    // Node version is not exposed by /_nodes/stats, so it's fetched
+    // separately from the (lightweight, filtered) Nodes Info API and
+    // merged in below. This lets the UI list which nodes are on which
+    // version when a cluster has mixed versions (e.g. mid-upgrade).
+    const [statsResult, infoResult] = await Promise.all([
+      context.core.opensearch.client.asCurrentUser.transport.request({
+        method: 'GET',
+        path: '/_nodes/stats/fs,os',
+      }),
+      context.core.opensearch.client.asCurrentUser.transport.request({
+        method: 'GET',
+        path: '/_nodes?filter_path=nodes.*.name,nodes.*.version',
+      }),
+    ]);
+    return formatNodeStats(statsResult.body?.nodes ?? {}, infoResult.body?.nodes ?? {});
   });
 
   // Cluster health
