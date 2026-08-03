@@ -1,6 +1,15 @@
 import { calculatePercentage } from './common';
 
-export function formatNodeStats(nodesObj: any): any[] {
+/**
+ * Formats per-node stats (from /_nodes/stats) and enriches each node with
+ * its version, sourced separately from the Nodes Info API since /_nodes/stats
+ * does not expose a node's version.
+ *
+ * @param nodesObj - The `nodes` object from the /_nodes/stats response.
+ * @param nodesInfoObj - The `nodes` object from the /_nodes info response,
+ *   keyed by node id, used only to look up each node's version.
+ */
+export function formatNodeStats(nodesObj: any, nodesInfoObj: any = {}): any[] {
   return Object.entries(nodesObj).map(([id, node]: any) => {
     const usedMem = node.os.mem.used_in_bytes;
     const totalMem = node.os.mem.total_in_bytes;
@@ -16,6 +25,7 @@ export function formatNodeStats(nodesObj: any): any[] {
       id,
       name: node.name,
       host: node.host,
+      version: nodesInfoObj?.[id]?.version ?? null,
       roles: node.roles,
       zone: node.attributes?.zone ?? null,
       cpu: { percent: node.os.cpu.percent },

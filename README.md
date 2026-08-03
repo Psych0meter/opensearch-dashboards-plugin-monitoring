@@ -96,6 +96,7 @@ monitoring:
 
 - cluster:admin/snapshot/status
 - cluster:monitor/health
+- cluster:monitor/nodes/info
 - cluster:monitor/nodes/stats
 - cluster:monitor/stats
 - indices:monitor/recovery

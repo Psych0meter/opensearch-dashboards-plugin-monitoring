@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { FormattedMessage, I18nProvider } from '@osd/i18n/react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import {
@@ -46,6 +46,7 @@ interface ClusterNode {
   id: string;
   name: string;
   host: string;
+  version: string | null;
   roles: string[];
   zone: string;
   cpu: { percent: number };
@@ -108,7 +109,9 @@ interface ClusterConfig {
 interface ClusterStats {
   cluster_name: string;
   status: string;
-  version: string;
+  // A single version string, or an array of distinct version strings when
+  // the cluster is running mixed versions (e.g. mid-upgrade).
+  version: string | string[];
   uptime: number;
   nodes: {
     total: number;
@@ -551,6 +554,25 @@ export const MonitoringApp = ({
     return { missingNodes, extraNodes };
   };
 
+  /**
+   * Groups the current nodes by their reported version, so that when a
+   * cluster is running mixed versions (e.g. mid-upgrade) the UI can show
+   * which nodes are on which version rather than just the distinct list
+   * of version strings.
+   */
+  const versionGroups = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    nodesData.forEach(node => {
+      if (!node.version) return;
+      if (!map[node.version]) map[node.version] = [];
+      map[node.version].push(node.name);
+    });
+
+    return Object.keys(map)
+      .sort()
+      .map(version => ({ version, nodes: map[version].sort() }));
+  }, [nodesData]);
+
   // Effect for auto-refreshing data
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -590,6 +612,12 @@ export const MonitoringApp = ({
   const nodesColumns: EuiBasicTableColumn<ClusterNode>[] = [
     { field: 'name', name: 'Node Name', sortable: true },
     { field: 'host', name: 'Host', sortable: true },
+    {
+      field: 'version',
+      name: 'Version',
+      sortable: true,
+      render: (version: string | null) => version ?? '-',
+    },
     {
       field: 'roles',
       name: 'Roles',
@@ -898,9 +926,40 @@ export const MonitoringApp = ({
                     <span>
                       <EuiIcon type='number' /> Version
                       {clusterStats && Array.isArray(clusterStats.version) && clusterStats.version.length > 1 && (
-                        <span style={{ fontSize: '0.8em', marginLeft: '5px' }}>
-                          ({clusterStats.version.length} versions)
-                        </span>
+                        versionGroups.length > 0 ? (
+                          <EuiToolTip
+                            position='bottom'
+                            content={
+                              <div>
+                                {versionGroups.map(group => (
+                                  <div key={group.version}>
+                                    <strong>{group.version}</strong>
+                                    <ul>
+                                      {group.nodes.map(name => (
+                                        <li key={name}>{name}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                ))}
+                              </div>
+                            }
+                          >
+                            <span
+                              style={{
+                                fontSize: '0.8em',
+                                marginLeft: '5px',
+                                textDecoration: 'underline dotted',
+                                cursor: 'help',
+                              }}
+                            >
+                              ({clusterStats.version.length} versions)
+                            </span>
+                          </EuiToolTip>
+                        ) : (
+                          <span style={{ fontSize: '0.8em', marginLeft: '5px' }}>
+                            ({clusterStats.version.length} versions)
+                          </span>
+                        )
                       )}
                     </span>
                   }
