@@ -860,7 +860,7 @@ export const MonitoringApp = ({
             <EuiTitle size='m'>
               <h2>
                 <FormattedMessage
-                  id='{PLUGIN_ID}clusterTitle'
+                  id={`${PLUGIN_ID}clusterTitle`}
                   defaultMessage='Cluster'
                 />
               </h2>
@@ -995,7 +995,7 @@ export const MonitoringApp = ({
               <EuiTitle size='m'>
                 <h2>
                   <FormattedMessage
-                    id='{PLUGIN_ID}nodesTitle'
+                    id={`${PLUGIN_ID}nodesTitle`}
                     defaultMessage='Nodes'
                   />
                 </h2>
@@ -1174,7 +1174,7 @@ export const MonitoringApp = ({
               <EuiTitle size='m'>
                 <h2>
                   <FormattedMessage
-                    id='{PLUGIN_ID}shardsTitle'
+                    id={`${PLUGIN_ID}shardsTitle`}
                     defaultMessage='Shards'
                   />
                 </h2>
@@ -1304,7 +1304,7 @@ export const MonitoringApp = ({
               <EuiTitle size='m'>
                 <h2>
                   <FormattedMessage
-                    id='{PLUGIN_ID}indicesTitle'
+                    id={`${PLUGIN_ID}indicesTitle`}
                     defaultMessage='Indices'
                   />
                 </h2>
@@ -1378,7 +1378,7 @@ export const MonitoringApp = ({
             <EuiTitle size='m'>
               <h2>
                 <FormattedMessage
-                  id='{PLUGIN_ID}graphViewTitle'
+                  id={`${PLUGIN_ID}graphViewTitle`}
                   defaultMessage='Graph View'
                 />
               </h2>
@@ -1420,7 +1420,7 @@ export const MonitoringApp = ({
                       <h1>
                         <EuiIcon type='anomalyDetection' size="l"/>&nbsp;
                         <FormattedMessage
-                          id='{PLUGIN_ID}pluginTitle'
+                          id={`${PLUGIN_ID}pluginTitle`}
                           defaultMessage='{name}'
                           values={{ name: PLUGIN_NAME }}
                         />
@@ -1478,7 +1478,7 @@ export const MonitoringApp = ({
                   <EuiTitle>
                     <h2>
                       <FormattedMessage
-                        id='{PLUGIN_ID}clusterNodesTitle'
+                        id={`${PLUGIN_ID}clusterNodesTitle`}
                         defaultMessage='Cluster Nodes'
                       />
                     </h2>
@@ -1513,7 +1513,7 @@ export const MonitoringApp = ({
                   <EuiTitle>
                     <h2>
                       <FormattedMessage
-                        id='{PLUGIN_ID}snapshotsTitle'
+                        id={`${PLUGIN_ID}snapshotsTitle`}
                         defaultMessage='Running Snapshots'
                       />
                     </h2>
@@ -1549,7 +1549,7 @@ export const MonitoringApp = ({
                   <EuiTitle>
                     <h2>
                       <FormattedMessage
-                        id='{PLUGIN_ID}shardsRecoveryTitle'
+                        id={`${PLUGIN_ID}shardsRecoveryTitle`}
                         defaultMessage='Shards Recovery'
                       />
                     </h2>

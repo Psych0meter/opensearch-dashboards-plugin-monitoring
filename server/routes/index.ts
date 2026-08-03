@@ -18,14 +18,15 @@ function createRoute(
 ) {
   router.get(
     { path: `/api/${PLUGIN_ID}${path}`, validate: false },
-    async (context, request, response) => {
+    async (context: any, _request: any, response: any) => {
       try {
         const body = await handler(context);
         return response.ok({ body });
-      } catch (err) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         return response.customError({
           statusCode: 500,
-          body: { message: err },
+          body: { message },
         });
       }
     }
