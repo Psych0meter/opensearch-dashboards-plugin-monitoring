@@ -6,7 +6,7 @@
     "build": "node ../../scripts/plugin_helpers build",
     "plugin-helpers": "node ../../scripts/plugin_helpers",
     "osd": "node ../../scripts/osd",
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@visx/group": "^3.12.0",
@@ -14,9 +14,9 @@
   },
   "devDependencies": {
     "@types/node": "~22.19.0",
-    "@typescript-eslint/eslint-plugin": "^8.58.0",
-    "@typescript-eslint/parser": "^8.58.0",
-    "eslint": "^8.57.1",
-    "@eslint/js": "^8.57.1"
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
+    "eslint": "^10.6.0",
+    "@eslint/js": "^10.6.0"
   }
 }
