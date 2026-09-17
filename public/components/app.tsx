@@ -21,13 +21,23 @@ import {
   EuiSwitch,
   EuiText,
   EuiTitle,
-  EuiToolTip
+  EuiToolTip,
+  euiPaletteColorBlind,
+  euiPaletteForStatus,
+  euiPaletteGray,
 } from '@elastic/eui';
 
 import { CoreStart } from '../../../../src/core/public';
 import { NavigationPublicPluginStart } from '../../../../src/plugins/navigation/public';
 import { PLUGIN_ID, PLUGIN_NAME } from '../../common';
 import { NetworkGraph } from './NetworkGraph';
+
+const STATUS_PALETTE = euiPaletteForStatus(3);
+const [STATUS_GOOD, STATUS_WARNING, STATUS_DANGER] = STATUS_PALETTE;
+
+const SUBDUED_TEXT_COLOR = euiPaletteGray(3)[1];
+const BORDER_COLOR = euiPaletteGray(5)[0];
+const INFO_COLOR = euiPaletteColorBlind()[1];
 
 /**
  * Interface for the dependencies required by the MonitoringApp component
@@ -303,7 +313,7 @@ export const MonitoringApp = ({
 
   const VerticalSeparator = () => (
     <div style={{
-      borderLeft: '1px solid #d3dae6',
+      borderLeft: `1px solid ${BORDER_COLOR}`,
       height: '90%',
       margin: '0 16px',
       alignSelf: 'center'
@@ -379,10 +389,10 @@ export const MonitoringApp = ({
    * @param percent - Usage percentage
    * @returns string - Color code
    */
-  const getUsageColor = (percent: number): '#159D8D' | '#FFCE7A' | '#FF6666' => {
-    if (percent < 80) return '#159D8D';
-    if (percent < 90) return '#FFCE7A';
-    return '#FF6666';
+  const getUsageColor = (percent: number): string => {
+    if (percent < 80) return STATUS_GOOD;
+    if (percent < 90) return STATUS_WARNING;
+    return STATUS_DANGER;
   };
 
   /**
@@ -390,10 +400,10 @@ export const MonitoringApp = ({
    * @param percent - Recovery percentage
    * @returns string - Color code
    */
-  const getRecoveryColor = (percent: number): '#159D8D' | '#FFCE7A' | '#FF6666' => {
-    if (percent === 100) return '#159D8D';
-    if (percent >= 50) return '#FFCE7A';
-    return '#FF6666';
+  const getRecoveryColor = (percent: number): string => {
+    if (percent === 100) return STATUS_GOOD;
+    if (percent >= 50) return STATUS_WARNING;
+    return STATUS_DANGER;
   };
 
   /**
@@ -401,10 +411,10 @@ export const MonitoringApp = ({
    * @param health - Health status string
    * @returns string - Color code
    */
-  const getHealthColor = (health: string): '#159D8D' | '#FFCE7A' | '#FF6666' => {
-    if (health === 'green') return '#159D8D';
-    if (health === 'yellow') return '#FFCE7A';
-    return '#FF6666';
+  const getHealthColor = (health: string): string => {
+    if (health === 'green') return STATUS_GOOD;
+    if (health === 'yellow') return STATUS_WARNING;
+    return STATUS_DANGER;
   };
 
   /**
@@ -673,7 +683,7 @@ export const MonitoringApp = ({
             size='s'
             valueText={true}
             label={`${formatBytes(mem.used)} / ${formatBytes(mem.total)}`}
-            color='#6DAEDB'
+            color={INFO_COLOR}
           />
         </div>
       ),
@@ -841,7 +851,12 @@ export const MonitoringApp = ({
       name: 'State',
       sortable: true,
       render: (state: string) => (
-        <span style={{ color: state === 'SUCCESS' ? '#159D8D' : '#FFCE7A' }}>
+        <span
+          style={{
+            color:
+              state === 'SUCCESS' ? STATUS_GOOD : state === 'FAILED' ? STATUS_DANGER : STATUS_WARNING,
+          }}
+        >
           {state}
         </span>
       ),
@@ -1021,7 +1036,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   descriptionElement="div"
-                  titleColor={snapshotsData.length === 0 ? '#159D8D' : '#FFCE7A'}
+                  titleColor={snapshotsData.length === 0 ? STATUS_GOOD : STATUS_WARNING}
                   textAlign="left"
                   isLoading={snapshotsLoading}
                 />
@@ -1050,15 +1065,15 @@ export const MonitoringApp = ({
                         style={{
                           color: clusterConfig?.nodes?.length && clusterStats
                             ? clusterStats.nodes.total === clusterConfig.nodes.length
-                              ? '#159D8D'
-                              : '#FF6666'
-                            : 'subdued',
+                              ? STATUS_GOOD
+                              : STATUS_DANGER
+                            : SUBDUED_TEXT_COLOR,
                         }}
                       >
                         {clusterStats ? clusterStats.nodes.total : '--'}
                       </span>
                       {clusterConfig?.nodes?.length > 0 && (
-                        <span style={{ fontSize: '0.5em', color: '#666' }}>
+                        <span style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {' '}
                           / {clusterConfig.nodes.length}
                         </span>
@@ -1148,7 +1163,7 @@ export const MonitoringApp = ({
                         <span style={{ color: getUsageColor(clusterStats.fs.percent) }}>
                           {clusterStats.fs.percent.toFixed(2)}%
                         </span>
-                        <div style={{ fontSize: '0.5em', color: '#666' }}>
+                        <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {`${formatBytes(clusterStats.fs.used)} / ${formatBytes(clusterStats.fs.total)}`}
                         </div>
                       </div>
@@ -1174,7 +1189,7 @@ export const MonitoringApp = ({
                         <span style={{ color: getUsageColor(clusterStats.jvm.mem.percent) }}>
                           {clusterStats.jvm.mem.percent.toFixed(2)}%
                         </span>
-                        <div style={{ fontSize: '0.5em', color: '#666' }}>
+                        <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {`${formatBytes(clusterStats.jvm.mem.used)} / ${formatBytes(clusterStats.jvm.mem.total)}`}
                         </div>
                       </div>
@@ -1300,7 +1315,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.unassigned_shards > 0 ? '#FF6666' : '#159D8D'}
+                  titleColor={clusterHealth?.unassigned_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1315,7 +1330,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.initializing_shards > 0 ? '#FF6666' : '#159D8D'}
+                  titleColor={clusterHealth?.initializing_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1330,7 +1345,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.active_shards_percent_as_number < 100 ? '#FF6666' : '#159D8D'}
+                  titleColor={clusterHealth?.active_shards_percent_as_number < 100 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
