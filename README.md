@@ -4,7 +4,7 @@ This repository contains the source code for the **monitoring** plugin for [Open
 
 ## Screenshots
 
-![Screenshot v0.0.1](screenshots/screenshot_0.0.1.png)
+![Screenshot v1.1.0](screenshots/screenshot_1.1.0.png)
 
 ## Prerequisites
 
