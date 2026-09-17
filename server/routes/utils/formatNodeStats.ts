@@ -21,6 +21,9 @@ export function formatNodeStats(nodesObj: any, nodesInfoObj: any = {}): any[] {
     const freeFs = node.fs.total.free_in_bytes;
     const usedFs = totalFs - freeFs;
 
+    const usedHeap = node.jvm?.mem?.heap_used_in_bytes ?? 0;
+    const totalHeap = node.jvm?.mem?.heap_max_in_bytes ?? 0;
+
     return {
       id,
       name: node.name,
@@ -33,6 +36,11 @@ export function formatNodeStats(nodesObj: any, nodesInfoObj: any = {}): any[] {
         total: totalMem,
         used: usedMem,
         percent: calculatePercentage(usedMem, totalMem),
+      },
+      heap: {
+        total: totalHeap,
+        used: usedHeap,
+        percent: calculatePercentage(usedHeap, totalHeap),
       },
       swap: {
         total: totalSwap,

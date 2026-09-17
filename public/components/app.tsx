@@ -51,6 +51,7 @@ interface ClusterNode {
   zone: string;
   cpu: { percent: number };
   mem: { total: number; used: number; percent: number };
+  heap: { total: number; used: number; percent: number };
   swap: { total: number; used: number; percent: number };
   fs: { total: number; used: number; percent: number };
 }
@@ -555,6 +556,16 @@ export const MonitoringApp = ({
   };
 
   /**
+   * Configured-vs-actual node diff, computed once per data change instead
+   * of on every render at each of its call-sites. Also feeds the Graph
+   * View, which shows configured nodes that aren't currently reporting.
+   */
+  const nodeDifferences = useMemo(
+    () => getNodeDifferences(clusterConfig?.nodes ?? [], nodesData),
+    [clusterConfig, nodesData]
+  );
+
+  /**
    * Groups the current nodes by their reported version, so that when a
    * cluster is running mixed versions (e.g. mid-upgrade) the UI can show
    * which nodes are on which version rather than just the distinct list
@@ -641,16 +652,44 @@ export const MonitoringApp = ({
     },
     {
       field: 'mem',
-      name: 'Memory',
+      name: (
+        <EuiToolTip
+          content={
+            'Raw OS memory in use, including the Linux page cache/buffers the ' +
+            'kernel keeps warm for disk I/O. For an actionable per-node memory ' +
+            'signal, see JVM Heap.'
+          }
+        >
+          <span>
+            Memory<EuiIcon type='iInCircle' size='s' />
+          </span>
+        </EuiToolTip>
+      ),
       render: (mem: { percent: number; used: number; total: number }) => (
         <div style={{ width: '90%' }}>
           <EuiProgress
-            value={mem.percent.toFixed(2)}
+            value={mem.percent}
             max={100}
             size='s'
             valueText={true}
             label={`${formatBytes(mem.used)} / ${formatBytes(mem.total)}`}
-            color={getUsageColor(mem.percent)}
+            color='#6DAEDB'
+          />
+        </div>
+      ),
+    },
+    {
+      field: 'heap',
+      name: 'JVM Heap',
+      render: (heap: { percent: number; used: number; total: number }) => (
+        <div style={{ width: '90%' }}>
+          <EuiProgress
+            value={heap.percent}
+            max={100}
+            size='s'
+            valueText={true}
+            label={`${formatBytes(heap.used)} / ${formatBytes(heap.total)}`}
+            color={getUsageColor(heap.percent)}
           />
         </div>
       ),
@@ -661,7 +700,7 @@ export const MonitoringApp = ({
       render: (swap: { percent: number; used: number; total: number }) => (
         <div style={{ width: '90%' }}>
           <EuiProgress
-            value={swap.percent.toFixed(2)}
+            value={swap.percent}
             max={100}
             size='s'
             valueText={true}
@@ -677,7 +716,7 @@ export const MonitoringApp = ({
       render: (fs: { percent: number; used: number; total: number }) => (
         <div style={{ width: '90%' }}>
           <EuiProgress
-            value={fs.percent.toFixed(2)}
+            value={fs.percent}
             max={100}
             size='s'
             valueText={true}
@@ -709,7 +748,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={numeric.toFixed(2)}
+              value={numeric}
               max={100}
               size='s'
               valueText
@@ -734,7 +773,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={numeric.toFixed(2)}
+              value={numeric}
               max={100}
               size='s'
               valueText
@@ -758,7 +797,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={numeric.toFixed(2)}
+              value={numeric}
               max={100}
               size='s'
               valueText
@@ -815,7 +854,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={percent.toFixed(2)}
+              value={percent}
               max={100}
               size='s'
               valueText={true}
@@ -1030,27 +1069,27 @@ export const MonitoringApp = ({
                     <span>
                       <EuiIcon type='node' /> Active
                       {clusterConfig && clusterStats && 
-                      (getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 ||
-                        getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.length > 0) && (
+                      (nodeDifferences.missingNodes.length > 0 ||
+                        nodeDifferences.extraNodes.length > 0) && (
                         <EuiToolTip
                           position='bottom'
                           content={
                             <div>
-                              {getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 && (
+                              {nodeDifferences.missingNodes.length > 0 && (
                                 <div>
                                   <strong>Missing nodes:</strong>
                                   <ul>
-                                    {getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.map(node => (
+                                    {nodeDifferences.missingNodes.map(node => (
                                       <li key={node}>{node}</li>
                                     ))}
                                   </ul>
                                 </div>
                               )}
-                              {getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.length > 0 && (
+                              {nodeDifferences.extraNodes.length > 0 && (
                                 <div>
                                   <strong>Unexpected nodes:</strong>
                                   <ul>
-                                    {getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.map(node => (
+                                    {nodeDifferences.extraNodes.map(node => (
                                       <li key={node}>{node}</li>
                                     ))}
                                   </ul>
@@ -1387,7 +1426,9 @@ export const MonitoringApp = ({
 
           <EuiPageContentBody>
             {nodesData.length > 0 ? (
-              <NetworkGraph nodes={nodesData} />
+              <div style={{ overflowX: 'auto' }}>
+                <NetworkGraph nodes={nodesData} missingNodes={nodeDifferences.missingNodes} />
+              </div>
             ) : (
               <EuiText textAlign="center">
                 <EuiIcon type="visualizeApp" size="xl" />
