@@ -49,7 +49,7 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
     const [statsResult, infoResult] = await Promise.all([
       context.core.opensearch.client.asCurrentUser.transport.request({
         method: 'GET',
-        path: '/_nodes/stats/fs,os',
+        path: '/_nodes/stats/fs,os,jvm',
       }),
       context.core.opensearch.client.asCurrentUser.transport.request({
         method: 'GET',

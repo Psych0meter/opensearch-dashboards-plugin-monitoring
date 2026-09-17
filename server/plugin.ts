@@ -36,7 +36,7 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
     return {};
   }
 
-  public start(core: CoreStart) {
+  public start(_core: CoreStart) {
     this.logger.debug('monitoring: Started');
     return {};
   }

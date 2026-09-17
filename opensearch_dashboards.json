@@ -1,6 +1,6 @@
 {
   "id": "monitoringPlugin",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "opensearchDashboardsVersion": "3.8.0",
   "server": true,
   "ui": true,

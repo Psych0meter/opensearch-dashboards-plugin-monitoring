@@ -36,7 +36,7 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
     return {};
   }
 
-  public start(core: CoreStart): MonitoringPluginStart {
+  public start(_core: CoreStart): MonitoringPluginStart {
     return {};
   }
 

@@ -21,13 +21,23 @@ import {
   EuiSwitch,
   EuiText,
   EuiTitle,
-  EuiToolTip
+  EuiToolTip,
+  euiPaletteColorBlind,
+  euiPaletteForStatus,
+  euiPaletteGray,
 } from '@elastic/eui';
 
 import { CoreStart } from '../../../../src/core/public';
 import { NavigationPublicPluginStart } from '../../../../src/plugins/navigation/public';
 import { PLUGIN_ID, PLUGIN_NAME } from '../../common';
 import { NetworkGraph } from './NetworkGraph';
+
+const STATUS_PALETTE = euiPaletteForStatus(3);
+const [STATUS_GOOD, STATUS_WARNING, STATUS_DANGER] = STATUS_PALETTE;
+
+const SUBDUED_TEXT_COLOR = euiPaletteGray(3)[1];
+const BORDER_COLOR = euiPaletteGray(5)[0];
+const INFO_COLOR = euiPaletteColorBlind()[1];
 
 /**
  * Interface for the dependencies required by the MonitoringApp component
@@ -51,6 +61,7 @@ interface ClusterNode {
   zone: string;
   cpu: { percent: number };
   mem: { total: number; used: number; percent: number };
+  heap: { total: number; used: number; percent: number };
   swap: { total: number; used: number; percent: number };
   fs: { total: number; used: number; percent: number };
 }
@@ -302,7 +313,7 @@ export const MonitoringApp = ({
 
   const VerticalSeparator = () => (
     <div style={{
-      borderLeft: '1px solid #d3dae6',
+      borderLeft: `1px solid ${BORDER_COLOR}`,
       height: '90%',
       margin: '0 16px',
       alignSelf: 'center'
@@ -378,10 +389,10 @@ export const MonitoringApp = ({
    * @param percent - Usage percentage
    * @returns string - Color code
    */
-  const getUsageColor = (percent: number): '#159D8D' | '#FFCE7A' | '#FF6666' => {
-    if (percent < 80) return '#159D8D';
-    if (percent < 90) return '#FFCE7A';
-    return '#FF6666';
+  const getUsageColor = (percent: number): string => {
+    if (percent < 80) return STATUS_GOOD;
+    if (percent < 90) return STATUS_WARNING;
+    return STATUS_DANGER;
   };
 
   /**
@@ -389,10 +400,10 @@ export const MonitoringApp = ({
    * @param percent - Recovery percentage
    * @returns string - Color code
    */
-  const getRecoveryColor = (percent: number): '#159D8D' | '#FFCE7A' | '#FF6666' => {
-    if (percent === 100) return '#159D8D';
-    if (percent >= 50) return '#FFCE7A';
-    return '#FF6666';
+  const getRecoveryColor = (percent: number): string => {
+    if (percent === 100) return STATUS_GOOD;
+    if (percent >= 50) return STATUS_WARNING;
+    return STATUS_DANGER;
   };
 
   /**
@@ -400,10 +411,10 @@ export const MonitoringApp = ({
    * @param health - Health status string
    * @returns string - Color code
    */
-  const getHealthColor = (health: string): '#159D8D' | '#FFCE7A' | '#FF6666' => {
-    if (health === 'green') return '#159D8D';
-    if (health === 'yellow') return '#FFCE7A';
-    return '#FF6666';
+  const getHealthColor = (health: string): string => {
+    if (health === 'green') return STATUS_GOOD;
+    if (health === 'yellow') return STATUS_WARNING;
+    return STATUS_DANGER;
   };
 
   /**
@@ -555,6 +566,16 @@ export const MonitoringApp = ({
   };
 
   /**
+   * Configured-vs-actual node diff, computed once per data change instead
+   * of on every render at each of its call-sites. Also feeds the Graph
+   * View, which shows configured nodes that aren't currently reporting.
+   */
+  const nodeDifferences = useMemo(
+    () => getNodeDifferences(clusterConfig?.nodes ?? [], nodesData),
+    [clusterConfig, nodesData]
+  );
+
+  /**
    * Groups the current nodes by their reported version, so that when a
    * cluster is running mixed versions (e.g. mid-upgrade) the UI can show
    * which nodes are on which version rather than just the distinct list
@@ -641,16 +662,44 @@ export const MonitoringApp = ({
     },
     {
       field: 'mem',
-      name: 'Memory',
+      name: (
+        <EuiToolTip
+          content={
+            'Raw OS memory in use, including the Linux page cache/buffers the ' +
+            'kernel keeps warm for disk I/O. For an actionable per-node memory ' +
+            'signal, see JVM Heap.'
+          }
+        >
+          <span>
+            Memory <EuiIcon type='iInCircle' size='s' />
+          </span>
+        </EuiToolTip>
+      ),
       render: (mem: { percent: number; used: number; total: number }) => (
         <div style={{ width: '90%' }}>
           <EuiProgress
-            value={mem.percent.toFixed(2)}
+            value={mem.percent}
             max={100}
             size='s'
             valueText={true}
             label={`${formatBytes(mem.used)} / ${formatBytes(mem.total)}`}
-            color={getUsageColor(mem.percent)}
+            color={INFO_COLOR}
+          />
+        </div>
+      ),
+    },
+    {
+      field: 'heap',
+      name: 'JVM Heap',
+      render: (heap: { percent: number; used: number; total: number }) => (
+        <div style={{ width: '90%' }}>
+          <EuiProgress
+            value={heap.percent}
+            max={100}
+            size='s'
+            valueText={true}
+            label={`${formatBytes(heap.used)} / ${formatBytes(heap.total)}`}
+            color={getUsageColor(heap.percent)}
           />
         </div>
       ),
@@ -661,7 +710,7 @@ export const MonitoringApp = ({
       render: (swap: { percent: number; used: number; total: number }) => (
         <div style={{ width: '90%' }}>
           <EuiProgress
-            value={swap.percent.toFixed(2)}
+            value={swap.percent}
             max={100}
             size='s'
             valueText={true}
@@ -677,7 +726,7 @@ export const MonitoringApp = ({
       render: (fs: { percent: number; used: number; total: number }) => (
         <div style={{ width: '90%' }}>
           <EuiProgress
-            value={fs.percent.toFixed(2)}
+            value={fs.percent}
             max={100}
             size='s'
             valueText={true}
@@ -709,7 +758,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={numeric.toFixed(2)}
+              value={numeric}
               max={100}
               size='s'
               valueText
@@ -734,7 +783,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={numeric.toFixed(2)}
+              value={numeric}
               max={100}
               size='s'
               valueText
@@ -758,7 +807,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={numeric.toFixed(2)}
+              value={numeric}
               max={100}
               size='s'
               valueText
@@ -802,7 +851,12 @@ export const MonitoringApp = ({
       name: 'State',
       sortable: true,
       render: (state: string) => (
-        <span style={{ color: state === 'SUCCESS' ? '#159D8D' : '#FFCE7A' }}>
+        <span
+          style={{
+            color:
+              state === 'SUCCESS' ? STATUS_GOOD : state === 'FAILED' ? STATUS_DANGER : STATUS_WARNING,
+          }}
+        >
           {state}
         </span>
       ),
@@ -815,7 +869,7 @@ export const MonitoringApp = ({
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
-              value={percent.toFixed(2)}
+              value={percent}
               max={100}
               size='s'
               valueText={true}
@@ -982,7 +1036,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   descriptionElement="div"
-                  titleColor={snapshotsData.length === 0 ? '#159D8D' : '#FFCE7A'}
+                  titleColor={snapshotsData.length === 0 ? STATUS_GOOD : STATUS_WARNING}
                   textAlign="left"
                   isLoading={snapshotsLoading}
                 />
@@ -1011,15 +1065,15 @@ export const MonitoringApp = ({
                         style={{
                           color: clusterConfig?.nodes?.length && clusterStats
                             ? clusterStats.nodes.total === clusterConfig.nodes.length
-                              ? '#159D8D'
-                              : '#FF6666'
-                            : 'subdued',
+                              ? STATUS_GOOD
+                              : STATUS_DANGER
+                            : SUBDUED_TEXT_COLOR,
                         }}
                       >
                         {clusterStats ? clusterStats.nodes.total : '--'}
                       </span>
                       {clusterConfig?.nodes?.length > 0 && (
-                        <span style={{ fontSize: '0.5em', color: '#666' }}>
+                        <span style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {' '}
                           / {clusterConfig.nodes.length}
                         </span>
@@ -1030,27 +1084,27 @@ export const MonitoringApp = ({
                     <span>
                       <EuiIcon type='node' /> Active
                       {clusterConfig && clusterStats && 
-                      (getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 ||
-                        getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.length > 0) && (
+                      (nodeDifferences.missingNodes.length > 0 ||
+                        nodeDifferences.extraNodes.length > 0) && (
                         <EuiToolTip
                           position='bottom'
                           content={
                             <div>
-                              {getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.length > 0 && (
+                              {nodeDifferences.missingNodes.length > 0 && (
                                 <div>
                                   <strong>Missing nodes:</strong>
                                   <ul>
-                                    {getNodeDifferences(clusterConfig.nodes, nodesData).missingNodes.map(node => (
+                                    {nodeDifferences.missingNodes.map(node => (
                                       <li key={node}>{node}</li>
                                     ))}
                                   </ul>
                                 </div>
                               )}
-                              {getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.length > 0 && (
+                              {nodeDifferences.extraNodes.length > 0 && (
                                 <div>
                                   <strong>Unexpected nodes:</strong>
                                   <ul>
-                                    {getNodeDifferences(clusterConfig.nodes, nodesData).extraNodes.map(node => (
+                                    {nodeDifferences.extraNodes.map(node => (
                                       <li key={node}>{node}</li>
                                     ))}
                                   </ul>
@@ -1109,7 +1163,7 @@ export const MonitoringApp = ({
                         <span style={{ color: getUsageColor(clusterStats.fs.percent) }}>
                           {clusterStats.fs.percent.toFixed(2)}%
                         </span>
-                        <div style={{ fontSize: '0.5em', color: '#666' }}>
+                        <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {`${formatBytes(clusterStats.fs.used)} / ${formatBytes(clusterStats.fs.total)}`}
                         </div>
                       </div>
@@ -1135,7 +1189,7 @@ export const MonitoringApp = ({
                         <span style={{ color: getUsageColor(clusterStats.jvm.mem.percent) }}>
                           {clusterStats.jvm.mem.percent.toFixed(2)}%
                         </span>
-                        <div style={{ fontSize: '0.5em', color: '#666' }}>
+                        <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {`${formatBytes(clusterStats.jvm.mem.used)} / ${formatBytes(clusterStats.jvm.mem.total)}`}
                         </div>
                       </div>
@@ -1261,7 +1315,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.unassigned_shards > 0 ? '#FF6666' : '#159D8D'}
+                  titleColor={clusterHealth?.unassigned_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1276,7 +1330,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.initializing_shards > 0 ? '#FF6666' : '#159D8D'}
+                  titleColor={clusterHealth?.initializing_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1291,7 +1345,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.active_shards_percent_as_number < 100 ? '#FF6666' : '#159D8D'}
+                  titleColor={clusterHealth?.active_shards_percent_as_number < 100 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1387,7 +1441,9 @@ export const MonitoringApp = ({
 
           <EuiPageContentBody>
             {nodesData.length > 0 ? (
-              <NetworkGraph nodes={nodesData} />
+              <div style={{ overflowX: 'auto' }}>
+                <NetworkGraph nodes={nodesData} missingNodes={nodeDifferences.missingNodes} />
+              </div>
             ) : (
               <EuiText textAlign="center">
                 <EuiIcon type="visualizeApp" size="xl" />

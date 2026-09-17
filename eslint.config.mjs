@@ -17,6 +17,9 @@ export default [
         NodeJS: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        window: 'readonly',
+        localStorage: 'readonly',
+        console: 'readonly',
       },
     },
     plugins: {
@@ -25,6 +28,11 @@ export default [
     rules: {
       '@typescript-eslint/no-empty-interface': ['warn'],
       '@typescript-eslint/array-type': ['error', { default: 'array' }],
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
   {
