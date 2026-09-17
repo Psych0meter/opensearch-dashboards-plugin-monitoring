@@ -102,7 +102,6 @@ function useAvailableColumns(cardCount: number, maxColumns?: number): number {
     window.addEventListener('resize', onResize);
     onResize();
     return () => window.removeEventListener('resize', onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardCount, maxColumns]);
 
   return columns;
