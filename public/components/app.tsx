@@ -671,7 +671,7 @@ export const MonitoringApp = ({
           }
         >
           <span>
-            Memory<EuiIcon type='iInCircle' size='s' />
+            Memory <EuiIcon type='iInCircle' size='s' />
           </span>
         </EuiToolTip>
       ),
