@@ -97,6 +97,16 @@ cd OpenSearch-Dashboards
 
 # 2) Match Node + Yarn to what this OSD version expects
 node -v                                     # check it satisfies the range in package.json "engines"
+
+# If it doesn't, install the exact version via nvm (installs nvm itself if it's not already present):
+export NVM_DIR="$HOME/.nvm"
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.7/install.sh | bash
+fi
+\. "$NVM_DIR/nvm.sh"
+nvm install "$(cat .node-version)"
+nvm use "$(cat .node-version)"
+node -v                                     # should now match .node-version
 corepack enable
 corepack prepare yarn@1.22.19 --activate    # OSD pins Yarn Classic via "packageManager"
 
