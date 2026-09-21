@@ -8,6 +8,20 @@ suffix identifies the OpenSearch Dashboards version the release targets.
 
 ## [Unreleased]
 
+## [v1.1.1-osd3.8.0] - 2026-09-21
+
+### Changed
+
+- The expected node inventory (used for "missing nodes" detection in Graph View and the Nodes stat) is now derived automatically from `opensearch.hosts`, instead of requiring a separate, duplicated `monitoring.nodes` entry in `opensearch_dashboards.yml`.
+
+### Deprecated
+
+- `monitoring.nodes` is no longer read. A startup warning is logged if it's still set; it can be removed from your config.
+
+### Documentation
+
+- The "Manual Release Build" section now shows how to fix a Node.js version mismatch (via `nvm`) instead of only telling readers to check for one.
+
 ## [v1.1.0-osd3.8.0] - 2026-09-17
 
 Compatible with OpenSearch Dashboards 3.8.0.
@@ -79,7 +93,8 @@ Compatible with OpenSearch Dashboards 3.8.0.
 
 Initial 1.0.0 release, targeting OpenSearch Dashboards 3.6.0.
 
-[Unreleased]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.0-osd3.8.0...HEAD
+[Unreleased]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.8.0...HEAD
+[v1.1.1-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.0-osd3.8.0...v1.1.1-osd3.8.0
 [v1.1.0-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.0.2-osd3.8.0...v1.1.0-osd3.8.0
 [v1.0.2-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.0.2-osd3.7.0...v1.0.2-osd3.8.0
 [v1.0.2-osd3.7.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.0.1-osd3.7.0...v1.0.2-osd3.7.0
