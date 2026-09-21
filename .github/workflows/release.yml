@@ -73,9 +73,24 @@ jobs:
           cd OpenSearch-Dashboards/plugins/monitoring
           yarn plugin-helpers build
 
+      - name: Extract Release Notes
+        id: notes
+        run: |
+          cd OpenSearch-Dashboards/plugins/monitoring
+          TAG="${{ steps.versions.outputs.release_tag }}"
+          awk -v tag="$TAG" '
+            $0 ~ "^## \\[" tag "\\]" { found=1; next }
+            found && (/^## \[/ || /^\[/) { exit }
+            found { print }
+          ' CHANGELOG.md > /tmp/release_notes.md
+          if [ ! -s /tmp/release_notes.md ]; then
+            echo "_No CHANGELOG.md entry found for $TAG._" > /tmp/release_notes.md
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.versions.outputs.release_tag }}
           files: OpenSearch-Dashboards/plugins/monitoring/build/*.zip
+          body_path: /tmp/release_notes.md
           generate_release_notes: true
