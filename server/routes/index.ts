@@ -37,9 +37,8 @@ function createRoute(
  * Registers API routes for the plugin.
  *
  * @param router - OpenSearch Dashboards router instance.
- * @param getConfig - Function to retrieve plugin configuration.
  */
-export function defineRoutes(router: IRouter, getConfig: () => any) {
+export function defineRoutes(router: IRouter) {
   // Nodes stats
   createRoute(router, '/nodes_stats', async (context) => {
     // Node version is not exposed by /_nodes/stats, so it's fetched
@@ -86,9 +85,19 @@ export function defineRoutes(router: IRouter, getConfig: () => any) {
     return formatRecoveryStats(result.body ?? {});
   });
 
-  // Plugin config
-  createRoute(router, '/config', async () => {
-    return { data: getConfig() ?? [] };
+  // Plugin config - the expected node inventory, derived from the live
+  // OpenSearch client's connection pool (built from opensearch.hosts).
+  createRoute(router, '/config', async (context) => {
+    const connections =
+      context.core.opensearch.client.asCurrentUser?.transport?.connectionPool?.connections ?? [];
+    const nodes = Array.from(
+      new Set(
+        connections
+          .map((connection: any) => connection.url?.hostname)
+          .filter((hostname: unknown): hostname is string => Boolean(hostname))
+      )
+    );
+    return { data: { nodes } };
   });
 
   // Snapshots
