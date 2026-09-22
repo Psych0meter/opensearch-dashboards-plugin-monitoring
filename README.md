@@ -65,6 +65,8 @@ cd ..
 From the root of the OpenSearch Dashboards repo:
 
 ```bash
+node -v   # check it satisfies the range in package.json "engines" - if not, see the
+          # Node.js version fix in the Manual Release Build section below
 yarn osd bootstrap
 ```
 
@@ -142,12 +144,14 @@ After building, re-run step 3 (`rsync`) to pick up further changes and re-run st
 
 ## Configuration
 
-Add the following configuration to your `config/opensearch_dashboards.yml` (not mandatory — enables the "missing nodes" detection in Graph View and the Nodes stat):
+No plugin-specific configuration is required. The "missing nodes" detection in Graph View and the Nodes stat is derived automatically from `opensearch.hosts` in your `config/opensearch_dashboards.yml` — whatever hosts OSD is already configured to talk to are treated as the expected node inventory:
 
 ```yaml
-monitoring:
-  nodes: ["NODE1_FQDN", "NODE2_FQDN", "NODE3_FQDN", ...]
+opensearch:
+  hosts: ["https://NODE1_FQDN:9200", "https://NODE2_FQDN:9200", "https://NODE3_FQDN:9200", ...]
 ```
+
+> **Note:** versions prior to 1.1.1 required a separate `monitoring.nodes` entry. That key is deprecated (the plugin logs a warning at startup if it's still set) and can be removed — it's no longer read.
 
 ## Required permissions
 
@@ -169,7 +173,7 @@ On the OpenSearch Dashboards server:
 systemctl restart opensearch-dashboards.service
 ```
 
-To remove the plugin, first remove the `monitoring` entry from `config/opensearch_dashboards.yml`, then:
+To remove the plugin:
 
 ```bash
 /usr/share/opensearch-dashboards/bin/opensearch-dashboards-plugin remove monitoring --allow-root
