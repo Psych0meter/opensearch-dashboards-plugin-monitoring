@@ -6,7 +6,7 @@ import { euiPaletteColorBlind } from '@elastic/eui';
 interface Node {
   id: string;
   name: string;
-  host: string;
+  host: string | null;
   roles: string[];
   zone: string | null;
 }

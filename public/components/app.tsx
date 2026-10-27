@@ -29,7 +29,13 @@ import {
 
 import { CoreStart } from '../../../../src/core/public';
 import { NavigationPublicPluginStart } from '../../../../src/plugins/navigation/public';
-import { PLUGIN_ID, PLUGIN_NAME } from '../../common';
+import {
+  PLUGIN_ID,
+  PLUGIN_NAME,
+  ClusterStatsSummary as ClusterStats,
+  NodeStats as ClusterNode,
+  RecoveryStats as ClusterIndex,
+} from '../../common';
 import { NetworkGraph } from './NetworkGraph';
 
 const STATUS_PALETTE = euiPaletteForStatus(3);
@@ -47,49 +53,6 @@ interface MonitoringAppDeps {
   notifications: CoreStart['notifications'];
   http: CoreStart['http'];
   navigation: NavigationPublicPluginStart;
-}
-
-/**
- * Interface representing a cluster node
- */
-interface ClusterNode {
-  id: string;
-  name: string;
-  host: string;
-  version: string | null;
-  roles: string[];
-  zone: string;
-  cpu: { percent: number };
-  mem: { total: number; used: number; percent: number };
-  heap: { total: number; used: number; percent: number };
-  swap: { total: number; used: number; percent: number };
-  fs: { total: number; used: number; percent: number };
-}
-
-/**
- * Interface representing cluster index recovery information
- */
-interface ClusterIndex {
-  index: string;
-  shard: number;
-  time: number;
-  type: string;
-  stage: string;
-  source_host: string;
-  source_node: string;
-  target_host: string;
-  target_node: string;
-  files: number;
-  files_recovered: number;
-  files_percent: string;
-  files_total: number;
-  bytes: number;
-  bytes_recovered: number;
-  bytes_percent: string;
-  bytes_total: number;
-  translog_recovered: number;
-  translog_percent: string;
-  translog_total: number;
 }
 
 /**
@@ -112,56 +75,6 @@ interface ClusterHealth {
  */
 interface ClusterConfig {
   nodes: string[];
-}
-
-/**
- * Interface representing cluster statistics
- */
-interface ClusterStats {
-  cluster_name: string;
-  status: string;
-  // A single version string, or an array of distinct version strings when
-  // the cluster is running mixed versions (e.g. mid-upgrade).
-  version: string | string[];
-  uptime: number;
-  nodes: {
-    total: number;
-    cluster_manager: number;
-    coordinating_only: number;
-    data: number;
-    ingest: number;
-    master: number;
-    remote_cluster_client: number;
-    search: number;
-    warm: number;
-  };
-  jvm: {
-    mem: { used: number; total: number; percent: number };
-    threads: number;
-  };
-  fs: {
-    used: number;
-    total: number;
-    percent: number;
-  };
-  indices: {
-    count: number;
-    shards: {
-      total: number;
-      primaries: number;
-      replication: number;
-    };
-    docs: {
-      count: number;
-      deleted: number;
-    };
-    store: {
-      size_in_bytes: number;
-    };
-    segments: {
-      count: number;
-    };
-  };
 }
 
 /**
@@ -632,7 +545,12 @@ export const MonitoringApp = ({
   // Table columns configuration
   const nodesColumns: EuiBasicTableColumn<ClusterNode>[] = [
     { field: 'name', name: 'Node Name', sortable: true },
-    { field: 'host', name: 'Host', sortable: true },
+    {
+      field: 'host',
+      name: 'Host',
+      sortable: true,
+      render: (host: string | null) => host ?? '-',
+    },
     {
       field: 'version',
       name: 'Version',
@@ -644,7 +562,12 @@ export const MonitoringApp = ({
       name: 'Roles',
       render: (roles: string[]) => <div style={{ whiteSpace: 'pre-line' }}>{roles.join('\n')}</div>
     },
-    { field: 'zone', name: 'Zone', sortable: true },
+    {
+      field: 'zone',
+      name: 'Zone',
+      sortable: true,
+      render: (zone: string | null) => zone ?? '-',
+    },
     {
       field: 'cpu',
       name: 'CPU',
@@ -952,7 +875,7 @@ export const MonitoringApp = ({
               </EuiFlexItem>
               <EuiFlexItem grow={false}>
                 <EuiStat
-                  title={clusterStats ? formatDuration(clusterStats.uptime, 'm') : '--'}
+                  title={clusterStats?.uptime != null ? formatDuration(clusterStats.uptime, 'm') : '--'}
                   description={
                     <span>
                       <EuiIcon type='clock' /> Uptime
@@ -967,7 +890,7 @@ export const MonitoringApp = ({
                 <EuiStat
                   title={
                     clusterStats ? (
-                      Array.isArray(clusterStats.version) ? (
+                      clusterStats.version == null ? '--' : Array.isArray(clusterStats.version) ? (
                         <span style={{ whiteSpace: 'pre-line', textAlign: 'left' }}>
                           {clusterStats.version.join('\n')}
                         </span>

@@ -1,62 +1,70 @@
-import { calculatePercentage } from './common';
+import { ClusterStatsSummary } from '../../../common/types';
+import {
+  toNullableNumber,
+  toNullableString,
+  toNumber,
+  toUsage,
+  toUsageFromFree,
+} from './common';
+import { RawClusterStats } from './raw_types';
 
-export function formatClusterStats(rawData: any) {
+/**
+ * Collapses the `nodes.versions` array into a single string when the cluster
+ * is homogeneous, keeps the array when versions are mixed.
+ */
+function formatVersions(versions: unknown): string | string[] | null {
+  if (!Array.isArray(versions)) return null;
+  const distinct = Array.from(new Set(versions.filter((v) => typeof v === 'string')));
+  if (distinct.length === 0) return null;
+  return distinct.length === 1 ? distinct[0] : distinct.sort();
+}
+
+export function formatClusterStats(rawData: RawClusterStats | null | undefined): ClusterStatsSummary {
+  const nodes = rawData?.nodes;
+  const count = nodes?.count ?? {};
+  const indices = rawData?.indices;
+
   return {
-    cluster_name: rawData.cluster_name,
-    status: rawData.status,
-    version: rawData.nodes.versions,
-    uptime: rawData.nodes.jvm.max_uptime_in_millis,
+    cluster_name: toNullableString(rawData?.cluster_name),
+    status: toNullableString(rawData?.status),
+    version: formatVersions(nodes?.versions),
+    uptime: toNullableNumber(nodes?.jvm?.max_uptime_in_millis),
 
     nodes: {
-      total: rawData?.nodes?.count?.total ?? 0,
-      cluster_manager: rawData?.nodes?.count?.cluster_manager ?? 0,
-      coordinating_only: rawData?.nodes?.count?.coordinating_only ?? 0,
-      data: rawData?.nodes?.count?.data ?? 0,
-      ingest: rawData?.nodes?.count?.ingest ?? 0,
-      master: rawData?.nodes?.count?.master ?? 0,
-      remote_cluster_client: rawData?.nodes?.count?.remote_cluster_client ?? 0,
-      search: rawData?.nodes?.count?.search ?? 0,
-      warm: rawData?.nodes?.count?.warm ?? 0,
+      total: toNumber(count.total),
+      cluster_manager: toNumber(count.cluster_manager),
+      coordinating_only: toNumber(count.coordinating_only),
+      data: toNumber(count.data),
+      ingest: toNumber(count.ingest),
+      master: toNumber(count.master),
+      remote_cluster_client: toNumber(count.remote_cluster_client),
+      search: toNumber(count.search),
+      warm: toNumber(count.warm),
     },
 
     jvm: {
-      mem: {
-        used: rawData.nodes.jvm.mem.heap_used_in_bytes,
-        total: rawData.nodes.jvm.mem.heap_max_in_bytes,
-        percent: calculatePercentage(
-          rawData.nodes.jvm.mem.heap_used_in_bytes,
-          rawData.nodes.jvm.mem.heap_max_in_bytes
-        ),
-      },
-      threads: rawData.nodes.jvm.threads,
+      mem: toUsage(nodes?.jvm?.mem?.heap_used_in_bytes, nodes?.jvm?.mem?.heap_max_in_bytes),
+      threads: toNumber(nodes?.jvm?.threads),
     },
 
-    fs: {
-      used:
-        rawData.nodes.fs.total_in_bytes - rawData.nodes.fs.free_in_bytes,
-      total: rawData.nodes.fs.total_in_bytes,
-      percent: calculatePercentage(
-        rawData.nodes.fs.total_in_bytes - rawData.nodes.fs.free_in_bytes,
-        rawData.nodes.fs.total_in_bytes
-      ),
-    },
+    fs: toUsageFromFree(nodes?.fs?.total_in_bytes, nodes?.fs?.free_in_bytes),
 
     indices: {
-      count: rawData.indices.count,
+      count: toNumber(indices?.count),
       shards: {
-        total: rawData.indices.shards.total,
-        primaries: rawData.indices.shards.primaries,
-        replication: rawData.indices.shards.replication,
+        total: toNumber(indices?.shards?.total),
+        primaries: toNumber(indices?.shards?.primaries),
+        replication: toNumber(indices?.shards?.replication),
       },
       docs: {
-        count: rawData.indices.docs.count,
-        deleted: rawData.indices.docs.deleted,
+        count: toNumber(indices?.docs?.count),
+        deleted: toNumber(indices?.docs?.deleted),
       },
       store: {
-        size_in_bytes: rawData.indices.store.size_in_bytes,
+        size_in_bytes: toNumber(indices?.store?.size_in_bytes),
       },
       segments: {
-        count: rawData.indices.segments.count,
+        count: toNumber(indices?.segments?.count),
       },
     },
   };
