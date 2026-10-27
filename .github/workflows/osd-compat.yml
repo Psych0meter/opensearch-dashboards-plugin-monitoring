@@ -1,0 +1,160 @@
+name: OpenSearch Dashboards Compatibility
+
+# Weekly: look for OpenSearch Dashboards releases (within .github/supported-osd.json)
+# that the latest plugin release has no zip for, build the plugin against each
+# and attach the zips to that same release. The plugin version does not change.
+#
+# A Dashboards version that fails to build is not attached; a deduplicated
+# issue is opened for it instead.
+#
+# Run manually with `osd_version` to (re)build one specific version, replacing
+# its zip if it already exists.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1' # Mondays 05:17 UTC
+  workflow_dispatch:
+    inputs:
+      osd_version:
+        description: 'Rebuild this Dashboards version (X.Y.Z), replacing its zip if present. Empty: add every missing supported version.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-assets
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      missing: ${{ steps.plan.outputs.missing }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Plan builds
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FORCE_VERSION: ${{ inputs.osd_version }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
+          TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+(-osd[0-9]+\.[0-9]+\.[0-9]+)?$'
+
+          if [ -n "$FORCE_VERSION" ]; then
+            [[ "$FORCE_VERSION" =~ $SEMVER_RE ]] || fail "osd_version '$FORCE_VERSION' is not X.Y.Z"
+          fi
+
+          # The latest published (non-draft, non-prerelease) release.
+          RELEASE=$(gh release view --json tagName,assets) || fail "no published release found"
+          TAG=$(jq -r '.tagName' <<< "$RELEASE")
+          [[ "$TAG" =~ $TAG_RE ]] || fail "latest release tag '$TAG' is not vX.Y.Z"
+          ASSETS=$(jq -r '.assets[].name' <<< "$RELEASE")
+
+          # Identity of the plugin as released, read from the tag itself.
+          git fetch --no-tags --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+          PLUGIN_ID=$(git show "refs/tags/$TAG:opensearch_dashboards.json" | jq -r '.id')
+          PLUGIN_VERSION=$(git show "refs/tags/$TAG:opensearch_dashboards.json" | jq -r '.version')
+          [[ "$PLUGIN_VERSION" =~ $SEMVER_RE ]] || fail "version '$PLUGIN_VERSION' at $TAG is not X.Y.Z"
+
+          SUPPORTED=$(.github/scripts/supported-osd-versions.sh)
+          MISSING=$(PLUGIN_ID="$PLUGIN_ID" PLUGIN_VERSION="$PLUGIN_VERSION" SUPPORTED="$SUPPORTED" \
+            ASSETS="$ASSETS" FORCE_VERSION="$FORCE_VERSION" .github/scripts/compat-plan.sh)
+
+          {
+            echo "release_tag=$TAG"
+            echo "missing=$MISSING"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $TAG; supported: $SUPPORTED; to build: $MISSING"
+
+  build:
+    needs: plan
+    if: ${{ needs.plan.outputs.missing != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        osd_version: ${{ fromJSON(needs.plan.outputs.missing) }}
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      osd_version: ${{ matrix.osd_version }}
+      ref: ${{ needs.plan.outputs.release_tag }}
+
+  publish:
+    needs: [plan, build]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.missing != '[]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.plan.outputs.release_tag }}
+      MISSING: ${{ needs.plan.outputs.missing }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: plugin-*
+          merge-multiple: true
+          path: dist
+
+      - name: Attach zips to the release
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ZIPS=(dist/*.zip)
+          if [ "${#ZIPS[@]}" -eq 0 ]; then
+            echo "No build succeeded; nothing to attach."
+            exit 0
+          fi
+          gh release upload "$TAG" "${ZIPS[@]}" --clobber
+
+      - name: Refresh the compatibility list in the release notes
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+          PLUGIN_ID=$(git show "refs/tags/$TAG:opensearch_dashboards.json" | jq -r '.id')
+          PLUGIN_VERSION=$(git show "refs/tags/$TAG:opensearch_dashboards.json" | jq -r '.version')
+          ASSETS=$(gh release view "$TAG" --json assets --jq '.assets[].name')
+          gh release view "$TAG" --json body --jq '.body' \
+            | ASSETS="$ASSETS" PLUGIN_ID="$PLUGIN_ID" PLUGIN_VERSION="$PLUGIN_VERSION" \
+              .github/scripts/render-compat-notes.sh > notes.md
+          gh release edit "$TAG" --notes-file notes.md
+
+      - name: Open an issue for versions that failed to build
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          PLUGIN_ID=$(git show "refs/tags/$TAG:opensearch_dashboards.json" | jq -r '.id')
+          PLUGIN_VERSION=$(git show "refs/tags/$TAG:opensearch_dashboards.json" | jq -r '.version')
+          for v in $(jq -r '.[]' <<< "$MISSING"); do
+            [ -f "dist/$PLUGIN_ID-$PLUGIN_VERSION-osd$v.zip" ] && continue
+            TITLE="Build failed for OpenSearch Dashboards $v"
+            EXISTING=$(gh issue list --state open --search "\"$TITLE\" in:title" --json title --jq "[.[] | select(.title == \"$TITLE\")] | length")
+            if [ "$EXISTING" -gt 0 ]; then
+              echo "An issue for $v is already open."
+              continue
+            fi
+            BODY="The weekly compatibility workflow could not build plugin release \`$TAG\` against OpenSearch Dashboards \`$v\`, so no zip was attached to the release.
+
+          Most likely a Dashboards API used by the plugin changed. See the failed run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID
+
+          The workflow retries every week while the version has no zip. Once fixed, release a new plugin version."
+            gh issue create --title "$TITLE" --body "$BODY"
+          done
