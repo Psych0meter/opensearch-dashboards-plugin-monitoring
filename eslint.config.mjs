@@ -17,6 +17,10 @@ export default [
         NodeJS: 'readonly',
         setInterval: 'readonly',
         clearInterval: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        document: 'readonly',
+        URL: 'readonly',
         window: 'readonly',
         localStorage: 'readonly',
         console: 'readonly',
@@ -33,6 +37,27 @@ export default [
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+    },
+  },
+  {
+    files: ['**/*.test.ts'],
+    languageOptions: {
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        jest: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        setImmediate: 'readonly',
+      },
+    },
+  },
+  {
+    files: ['test/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { module: 'writable', require: 'readonly' },
     },
   },
   {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { FormattedMessage, I18nProvider } from '@osd/i18n/react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import {
@@ -29,8 +29,23 @@ import {
 
 import { CoreStart } from '../../../../src/core/public';
 import { NavigationPublicPluginStart } from '../../../../src/plugins/navigation/public';
-import { PLUGIN_ID, PLUGIN_NAME } from '../../common';
+import {
+  PLUGIN_ID,
+  PLUGIN_NAME,
+  ClusterStatsSummary as ClusterStats,
+  NodeStats as ClusterNode,
+  RecoveryStats as ClusterIndex,
+  ExpectedHost,
+  compareInventory,
+} from '../../common';
 import { NetworkGraph } from './NetworkGraph';
+import {
+  MIN_REFRESH_INTERVAL_SECONDS,
+  parseRefreshInterval,
+  sanitizeStoredInterval,
+  singleFlight,
+  startPolling,
+} from '../refresh';
 
 const STATUS_PALETTE = euiPaletteForStatus(3);
 const [STATUS_GOOD, STATUS_WARNING, STATUS_DANGER] = STATUS_PALETTE;
@@ -47,49 +62,6 @@ interface MonitoringAppDeps {
   notifications: CoreStart['notifications'];
   http: CoreStart['http'];
   navigation: NavigationPublicPluginStart;
-}
-
-/**
- * Interface representing a cluster node
- */
-interface ClusterNode {
-  id: string;
-  name: string;
-  host: string;
-  version: string | null;
-  roles: string[];
-  zone: string;
-  cpu: { percent: number };
-  mem: { total: number; used: number; percent: number };
-  heap: { total: number; used: number; percent: number };
-  swap: { total: number; used: number; percent: number };
-  fs: { total: number; used: number; percent: number };
-}
-
-/**
- * Interface representing cluster index recovery information
- */
-interface ClusterIndex {
-  index: string;
-  shard: number;
-  time: number;
-  type: string;
-  stage: string;
-  source_host: string;
-  source_node: string;
-  target_host: string;
-  target_node: string;
-  files: number;
-  files_recovered: number;
-  files_percent: string;
-  files_total: number;
-  bytes: number;
-  bytes_recovered: number;
-  bytes_percent: string;
-  bytes_total: number;
-  translog_recovered: number;
-  translog_percent: string;
-  translog_total: number;
 }
 
 /**
@@ -111,57 +83,7 @@ interface ClusterHealth {
  * Interface representing cluster configuration
  */
 interface ClusterConfig {
-  nodes: string[];
-}
-
-/**
- * Interface representing cluster statistics
- */
-interface ClusterStats {
-  cluster_name: string;
-  status: string;
-  // A single version string, or an array of distinct version strings when
-  // the cluster is running mixed versions (e.g. mid-upgrade).
-  version: string | string[];
-  uptime: number;
-  nodes: {
-    total: number;
-    cluster_manager: number;
-    coordinating_only: number;
-    data: number;
-    ingest: number;
-    master: number;
-    remote_cluster_client: number;
-    search: number;
-    warm: number;
-  };
-  jvm: {
-    mem: { used: number; total: number; percent: number };
-    threads: number;
-  };
-  fs: {
-    used: number;
-    total: number;
-    percent: number;
-  };
-  indices: {
-    count: number;
-    shards: {
-      total: number;
-      primaries: number;
-      replication: number;
-    };
-    docs: {
-      count: number;
-      deleted: number;
-    };
-    store: {
-      size_in_bytes: number;
-    };
-    segments: {
-      count: number;
-    };
-  };
+  hosts: ExpectedHost[];
 }
 
 /**
@@ -285,17 +207,22 @@ export const MonitoringApp = ({
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig | null>(null);
   const [snapshotsData, setSnapshotsData] = useState<Snapshot[]>([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [nodesLoading, setNodesLoading] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [hideDone, setHideDone] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('-stage:DONE');
   const [autoRefresh, setAutoRefresh] = useState(
-    getLocalStorageItem(`${PLUGIN_ID}.autoRefresh`, false)
+    getLocalStorageItem<unknown>(`${PLUGIN_ID}.autoRefresh`, false) === true
   );
-  const [refreshInterval, setRefreshInterval] = useState(
-    getLocalStorageItem(`${PLUGIN_ID}.refreshInterval`, 30)
+  // `refreshInterval` is always a valid interval; `intervalInput` holds
+  // whatever is being typed, and is only committed once it parses.
+  const [refreshInterval, setRefreshInterval] = useState(() =>
+    sanitizeStoredInterval(getLocalStorageItem<unknown>(`${PLUGIN_ID}.refreshInterval`, null))
   );
-  const [isIntervalValid, setIsIntervalValid] = useState(true);
-  const [lastRefreshTime, setLastRefreshTime] = useState<string>('');
+  const [intervalInput, setIntervalInput] = useState(() => String(refreshInterval));
+  const isIntervalValid = parseRefreshInterval(intervalInput) !== null;
+  const [lastSuccessTime, setLastSuccessTime] = useState<Date | null>(null);
+  const [lastAttemptTime, setLastAttemptTime] = useState<Date | null>(null);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
 
   const [clusterHealthLoading, setClusterHealthLoading] = useState(false);
   const [clusterStatsLoading, setClusterStatsLoading] = useState(false);
@@ -304,11 +231,6 @@ export const MonitoringApp = ({
   const setAutoRefreshPersisted = (value: boolean) => {
     setAutoRefresh(value);
     setLocalStorageItem(`${PLUGIN_ID}.autoRefresh`, value);
-  };
-
-  const setRefreshIntervalPersisted = (value: number) => {
-    setRefreshInterval(value);
-    setLocalStorageItem(`${PLUGIN_ID}.refreshInterval`, value);
   };
 
   const VerticalSeparator = () => (
@@ -321,24 +243,18 @@ export const MonitoringApp = ({
   );
 
   /**
-   * Validates the refresh interval value
-   * @param value - The interval value in seconds
-   * @returns boolean - True if the interval is valid (>= 30 seconds)
-   */
-  const validateInterval = (value: number) => {
-    const isValid = value >= 30;
-    setIsIntervalValid(isValid);
-    return isValid;
-  };
-
-  /**
-   * Handles changes to the refresh interval input
-   * @param e - The change event from the input
+   * Handles changes to the refresh interval input. Invalid values (empty,
+   * non-numeric, below the minimum) are shown as invalid but never applied
+   * or persisted, so the polling loop always runs on a valid interval.
    */
   const handleIntervalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value, 10);
-    setRefreshIntervalPersisted(value);
-    validateInterval(value);
+    const raw = e.target.value;
+    setIntervalInput(raw);
+    const parsed = parseRefreshInterval(raw);
+    if (parsed !== null) {
+      setRefreshInterval(parsed);
+      setLocalStorageItem(`${PLUGIN_ID}.refreshInterval`, parsed);
+    }
   };
 
   /**
@@ -381,6 +297,12 @@ export const MonitoringApp = ({
     if ((remainingMillis > 0 || parts.length === 0) && minIndex >= 4)
       parts.push(`${remainingMillis} millisecond${remainingMillis !== 1 ? 's' : ''}`);
 
+    if (parts.length === 0) {
+      const unitNames: Record<TimeUnit, string> = {
+        d: 'day', h: 'hour', m: 'minute', s: 'second', ms: 'millisecond',
+      };
+      return `< 1 ${unitNames[smallestUnit]}`;
+    }
     return parts.join(' ');
   };
 
@@ -441,139 +363,137 @@ export const MonitoringApp = ({
     );
   };
 
-  // Data fetching functions
-  const fetchConfig = useCallback(async () => {
+  // Data fetching
+  //
+  // Each fetcher manages its own loading flag and resolves to `true` on
+  // success, `false` on failure (never rejects), so one failing source can't
+  // hide another's state and the caller knows what actually succeeded.
+  //
+  // Failures are toasted once when a source starts failing, not on every
+  // auto-refresh while it keeps failing.
+  const failingSourcesRef = useRef<Set<string>>(new Set());
+
+  const reportResult = useCallback(
+    (source: string, title: string, err?: any): boolean => {
+      const failing = failingSourcesRef.current;
+      if (err === undefined) {
+        failing.delete(source);
+        return true;
+      }
+      if (!failing.has(source)) {
+        failing.add(source);
+        notifications.toasts.addDanger({
+          title,
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
+      }
+      return false;
+    },
+    [notifications]
+  );
+
+  const fetchConfig = useCallback(async (): Promise<boolean> => {
+    setClusterConfigLoading(true);
     try {
-      setClusterConfigLoading(true);
       const res = await http.get(`/api/${PLUGIN_ID}/config`);
       setClusterConfig(res.data);
+      return reportResult('config', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch configuration',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('config', 'Failed to fetch configuration', err);
     } finally {
       setClusterConfigLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchCluster = useCallback(async () => {
+  const fetchCluster = useCallback(async (): Promise<boolean> => {
+    setClusterHealthLoading(true);
     try {
-      setClusterHealthLoading(true);
       const res = await http.get(`/api/${PLUGIN_ID}/cluster_health`);
       setClusterHealth(res.data);
+      return reportResult('cluster health', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch cluster data',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('cluster health', 'Failed to fetch cluster health', err);
     } finally {
       setClusterHealthLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchNodes = useCallback(async () => {
+  const fetchNodes = useCallback(async (): Promise<boolean> => {
+    setNodesLoading(true);
     try {
-      setLoading(true);
       const nodes = await http.get(`/api/${PLUGIN_ID}/nodes_stats`);
       setNodesData(nodes);
+      return reportResult('nodes', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch nodes data',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('nodes', 'Failed to fetch nodes data', err);
     } finally {
-      setLoading(false);
+      setNodesLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchRecovery = useCallback(async () => {
+  const fetchRecovery = useCallback(async (): Promise<boolean> => {
+    setRecoveryLoading(true);
     try {
-      setLoading(true);
-      const recovData = await http.get(`/api/${PLUGIN_ID}/recovery`);
+      const recovData = await http.get(`/api/${PLUGIN_ID}/recovery`, {
+        query: { include_completed: !hideDone },
+      });
       setRecoveryData(recovData);
+      return reportResult('recovery', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch recovery data',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('recovery', 'Failed to fetch recovery data', err);
     } finally {
-      setLoading(false);
+      setRecoveryLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult, hideDone]);
 
-  const fetchClusterStats = useCallback(async () => {
+  const fetchClusterStats = useCallback(async (): Promise<boolean> => {
+    setClusterStatsLoading(true);
     try {
-      setClusterStatsLoading(true);
       const parsedData = await http.get(`/api/${PLUGIN_ID}/cluster_stats`);
       setClusterStats(parsedData);
+      return reportResult('cluster stats', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch cluster stats',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('cluster stats', 'Failed to fetch cluster stats', err);
     } finally {
       setClusterStatsLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchSnapshots = useCallback(async () => {
+  const fetchSnapshots = useCallback(async (): Promise<boolean> => {
+    setSnapshotsLoading(true);
     try {
-      setSnapshotsLoading(true);
       const response = await http.get(`/api/${PLUGIN_ID}/snapshots`);
-      
-      if (response?.snapshots) {
-        setSnapshotsData(response.snapshots);
-      } else {
-        notifications.toasts.addWarning({
-          title: 'No snapshot data available',
-          text: 'The snapshots API returned no data',
-        });
-        setSnapshotsData([]);
-      }
+      setSnapshotsData(Array.isArray(response?.snapshots) ? response.snapshots : []);
+      return reportResult('snapshots', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch snapshots',
-        text: err?.body?.message || err.message || 'An unexpected error occurred',
-      });
       setSnapshotsData([]);
+      return reportResult('snapshots', 'Failed to fetch snapshots', err);
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
   /**
-   * Toggles the display of completed recovery items
+   * Toggles the display of completed recovery items. Completed recoveries
+   * are only requested from OpenSearch while this is off.
    */
-  const toggleHideDone = () => {
-    const newHideDone = !hideDone;
-    setHideDone(newHideDone);
-    setSearchQuery(newHideDone ? '-stage:DONE' : '');
-  };
+  const toggleHideDone = () => setHideDone(!hideDone);
 
   /**
-   * Compares configured nodes with actual nodes to find differences
-   * @param configNodes - Array of configured node names
-   * @param actualNodes - Array of actual cluster nodes
-   * @returns Object with missingNodes and extraNodes arrays
+   * Configured-vs-actual node comparison, computed once per data change.
+   * Feeds the Nodes stat and the Graph View "Missing Nodes" card. When the
+   * configured hosts can't be matched to any node (load balancer, proxy),
+   * the comparison is flagged unreliable and no alarm is raised.
    */
-  const getNodeDifferences = (configNodes: string[], actualNodes: ClusterNode[]) => {
-    const actualNodeNames = actualNodes.map(node => node.name);
-    const missingNodes = configNodes.filter(name => !actualNodeNames.includes(name));
-    const extraNodes = actualNodeNames.filter(name => !configNodes.includes(name));
-
-    return { missingNodes, extraNodes };
-  };
-
-  /**
-   * Configured-vs-actual node diff, computed once per data change instead
-   * of on every render at each of its call-sites. Also feeds the Graph
-   * View, which shows configured nodes that aren't currently reporting.
-   */
-  const nodeDifferences = useMemo(
-    () => getNodeDifferences(clusterConfig?.nodes ?? [], nodesData),
+  const inventory = useMemo(
+    () => compareInventory(clusterConfig?.hosts ?? [], nodesData),
     [clusterConfig, nodesData]
   );
+  const inventoryReady = clusterConfig !== null && nodesData.length > 0;
+  const inventoryAlarm =
+    inventoryReady &&
+    inventory.reliable &&
+    (inventory.missingHosts.length > 0 || inventory.unexpectedNodes.length > 0);
 
   /**
    * Groups the current nodes by their reported version, so that when a
@@ -594,45 +514,91 @@ export const MonitoringApp = ({
       .map(version => ({ version, nodes: map[version].sort() }));
   }, [nodesData]);
 
-  // Effect for auto-refreshing data
+  /**
+   * Shortest and longest JVM uptime across reporting nodes. The shortest one
+   * is the most actionable (it reveals a recent restart), the longest one is
+   * what OpenSearch exposes as `max_uptime_in_millis`.
+   */
+  const uptimeRange = useMemo(() => {
+    const withUptime = nodesData.filter(
+      (node): node is ClusterNode & { uptime: number } => node.uptime != null
+    );
+    if (withUptime.length === 0) return null;
+    const sorted = [...withUptime].sort((a, b) => a.uptime - b.uptime);
+    return {
+      shortest: sorted[0],
+      longest: sorted[sorted.length - 1],
+      count: sorted.length,
+    };
+  }, [nodesData]);
+
+  /**
+   * Refreshes every section. Concurrent calls share the in-flight run, so a
+   * manual toggle can't stack a second round of requests on top of a poll.
+   * "Last update" only advances when every source succeeded.
+   */
+  const refreshAll = useCallback(async () => {
+    setLastAttemptTime(new Date());
+    const sources: [string, () => Promise<boolean>][] = [
+      ['cluster health', fetchCluster],
+      ['nodes', fetchNodes],
+      ['recovery', fetchRecovery],
+      ['cluster stats', fetchClusterStats],
+      ['config', fetchConfig],
+      ['snapshots', fetchSnapshots],
+    ];
+    const results = await Promise.all(sources.map(([, fetch]) => fetch()));
+    const failed = sources.filter((_, i) => !results[i]).map(([name]) => name);
+    setFailedSources(failed);
+    if (failed.length === 0) setLastSuccessTime(new Date());
+  }, [fetchCluster, fetchNodes, fetchRecovery, fetchClusterStats, fetchConfig, fetchSnapshots]);
+
+  // Always call the latest refreshAll through a single-flight wrapper whose
+  // identity never changes, so the polling loop isn't restarted (and no
+  // extra request is fired) whenever a fetcher's dependencies change.
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
+  const runRefresh = useMemo(() => singleFlight(() => refreshAllRef.current()), []);
+
+  // Initial load
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+    void runRefresh();
+  }, [runRefresh]);
 
-    const fetchAllData = async () => {
-      try {
-        await Promise.all([
-          fetchCluster(),
-          fetchNodes(),
-          fetchRecovery(),
-          fetchClusterStats(),
-          fetchConfig(),
-          fetchSnapshots()
-        ]);
-        setLastRefreshTime(new Date().toLocaleTimeString());
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-      }
-    };
-
-    // Initial fetch
-    fetchAllData();
-
-    // Set up interval if autoRefresh is enabled
-    if (autoRefresh && isIntervalValid) {
-      intervalId = setInterval(fetchAllData, refreshInterval * 1000);
+  // Refetch recoveries when switching between ongoing-only and all.
+  const isFirstHideDoneRender = useRef(true);
+  useEffect(() => {
+    if (isFirstHideDoneRender.current) {
+      isFirstHideDoneRender.current = false;
+      return;
     }
+    void fetchRecovery();
+  }, [fetchRecovery]);
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [autoRefresh, refreshInterval, isIntervalValid, 
-      fetchCluster, fetchNodes, fetchRecovery, 
-      fetchClusterStats, fetchConfig, fetchSnapshots]);
+  // Auto-refresh: chained timeouts (no overlap), paused while the tab is
+  // hidden, resumed with an immediate refresh when it becomes visible.
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    return startPolling({
+      intervalMs: refreshInterval * 1000,
+      run: runRefresh,
+      isHidden: () => typeof document !== 'undefined' && document.hidden,
+      onVisibilityChange: (listener) => {
+        document.addEventListener('visibilitychange', listener);
+        return () => document.removeEventListener('visibilitychange', listener);
+      },
+    });
+  }, [autoRefresh, refreshInterval, runRefresh]);
 
   // Table columns configuration
   const nodesColumns: EuiBasicTableColumn<ClusterNode>[] = [
     { field: 'name', name: 'Node Name', sortable: true },
-    { field: 'host', name: 'Host', sortable: true },
+    {
+      field: 'host',
+      name: 'Host',
+      sortable: true,
+      render: (host: string | null) => host ?? '-',
+    },
     {
       field: 'version',
       name: 'Version',
@@ -644,7 +610,18 @@ export const MonitoringApp = ({
       name: 'Roles',
       render: (roles: string[]) => <div style={{ whiteSpace: 'pre-line' }}>{roles.join('\n')}</div>
     },
-    { field: 'zone', name: 'Zone', sortable: true },
+    {
+      field: 'zone',
+      name: 'Zone',
+      sortable: true,
+      render: (zone: string | null) => zone ?? '-',
+    },
+    {
+      field: 'uptime',
+      name: 'Uptime',
+      sortable: true,
+      render: (uptime: number | null) => (uptime != null ? formatDuration(uptime, 'm') : '-'),
+    },
     {
       field: 'cpu',
       name: 'CPU',
@@ -738,6 +715,15 @@ export const MonitoringApp = ({
     },
   ];
 
+  // Percent columns hold strings such as "30.0%" (or "-"), which would sort
+  // lexically ("100.0%" before "9.0%"); sort on the numeric value instead,
+  // with "-" last when ascending.
+  const sortByPercent = (field: 'files_percent' | 'bytes_percent' | 'translog_percent') =>
+    (item: ClusterIndex): number => {
+      const value = parseFloat(item[field]);
+      return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+    };
+
   const recoveryColumns: EuiBasicTableColumn<ClusterIndex>[] = [
     { field: 'index', name: 'Index', sortable: true },
     { field: 'shard', name: 'Shard', sortable: true },
@@ -768,7 +754,7 @@ export const MonitoringApp = ({
           </div>
         );
       },
-      sortable: true
+      sortable: sortByPercent('files_percent'),
     },
     {
       field: 'bytes_percent',
@@ -793,13 +779,17 @@ export const MonitoringApp = ({
           </div>
         );
       },
-      sortable: true
+      sortable: sortByPercent('bytes_percent'),
     },
     {
       field: 'translog_percent',
       name: 'Translog',
       render: (percent: string, item: ClusterIndex) => {
-        if (percent === '-') return '-';
+        if (percent === '-') {
+          // Total not known (yet) or nothing to replay: show operations
+          // replayed so far, if any, instead of a meaningless percentage.
+          return item.translog_recovered > 0 ? `${item.translog_recovered} ops` : '-';
+        }
         const numeric = parseFloat(percent);
         const label = numeric === 100
           ? `${item.translog_total}`
@@ -817,7 +807,7 @@ export const MonitoringApp = ({
           </div>
         );
       },
-      sortable: true
+      sortable: sortByPercent('translog_percent'),
     },
     {
       field: 'time',
@@ -865,7 +855,7 @@ export const MonitoringApp = ({
       field: 'shards_stats',
       name: 'Shards',
       render: (stats: { done: number; total: number }) => {
-        const percent = Math.round((stats.done / stats.total) * 100);
+        const percent = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress
@@ -952,22 +942,52 @@ export const MonitoringApp = ({
               </EuiFlexItem>
               <EuiFlexItem grow={false}>
                 <EuiStat
-                  title={clusterStats ? formatDuration(clusterStats.uptime, 'm') : '--'}
-                  description={
-                    <span>
-                      <EuiIcon type='clock' /> Uptime
-                    </span>
+                  title={
+                    uptimeRange ? (
+                      <div>
+                        <span>{formatDuration(uptimeRange.shortest.uptime, 'm')}</span>
+                        {uptimeRange.count > 1 && (
+                          <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
+                            {`longest: ${formatDuration(uptimeRange.longest.uptime, 'm')}`}
+                          </div>
+                        )}
+                      </div>
+                    ) : clusterStats?.longest_node_uptime != null ? (
+                      <div>
+                        <span>{formatDuration(clusterStats.longest_node_uptime, 'm')}</span>
+                        <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
+                          longest node
+                        </div>
+                      </div>
+                    ) : '--'
                   }
-                  
+                  description={
+                    <EuiToolTip
+                      position='bottom'
+                      content={
+                        uptimeRange
+                          ? `Shortest JVM uptime: ${uptimeRange.shortest.name}. ` +
+                            `Longest: ${uptimeRange.longest.name}. ` +
+                            'A recent value here means a node restarted recently; ' +
+                            'there is no single cluster-wide uptime.'
+                          : 'JVM uptime of the longest-running node. There is no single cluster-wide uptime.'
+                      }
+                    >
+                      <span>
+                        <EuiIcon type='clock' /> Node Uptime <EuiIcon type='iInCircle' size='s' />
+                      </span>
+                    </EuiToolTip>
+                  }
                   textAlign='left'
-                  isLoading={clusterStatsLoading}
+                  titleElement='div'
+                  isLoading={clusterStatsLoading && !uptimeRange}
                 />
               </EuiFlexItem>
               <EuiFlexItem grow={false}>
                 <EuiStat
                   title={
                     clusterStats ? (
-                      Array.isArray(clusterStats.version) ? (
+                      clusterStats.version == null ? '--' : Array.isArray(clusterStats.version) ? (
                         <span style={{ whiteSpace: 'pre-line', textAlign: 'left' }}>
                           {clusterStats.version.join('\n')}
                         </span>
@@ -1063,19 +1083,20 @@ export const MonitoringApp = ({
                     <div>
                       <span
                         style={{
-                          color: clusterConfig?.nodes?.length && clusterStats
-                            ? clusterStats.nodes.total === clusterConfig.nodes.length
-                              ? STATUS_GOOD
-                              : STATUS_DANGER
-                            : SUBDUED_TEXT_COLOR,
+                          color:
+                            clusterStats && inventoryReady && inventory.reliable
+                              ? inventoryAlarm
+                                ? STATUS_DANGER
+                                : STATUS_GOOD
+                              : SUBDUED_TEXT_COLOR,
                         }}
                       >
                         {clusterStats ? clusterStats.nodes.total : '--'}
                       </span>
-                      {clusterConfig?.nodes?.length > 0 && (
+                      {inventoryReady && inventory.reliable && (
                         <span style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {' '}
-                          / {clusterConfig.nodes.length}
+                          / {inventory.expectedCount}
                         </span>
                       )}
                     </div>
@@ -1083,28 +1104,26 @@ export const MonitoringApp = ({
                   description={
                     <span>
                       <EuiIcon type='node' /> Active
-                      {clusterConfig && clusterStats && 
-                      (nodeDifferences.missingNodes.length > 0 ||
-                        nodeDifferences.extraNodes.length > 0) && (
+                      {clusterStats && inventoryAlarm && (
                         <EuiToolTip
                           position='bottom'
                           content={
                             <div>
-                              {nodeDifferences.missingNodes.length > 0 && (
+                              {inventory.missingHosts.length > 0 && (
                                 <div>
-                                  <strong>Missing nodes:</strong>
+                                  <strong>Configured hosts not reporting:</strong>
                                   <ul>
-                                    {nodeDifferences.missingNodes.map(node => (
-                                      <li key={node}>{node}</li>
+                                    {inventory.missingHosts.map(host => (
+                                      <li key={host}>{host}</li>
                                     ))}
                                   </ul>
                                 </div>
                               )}
-                              {nodeDifferences.extraNodes.length > 0 && (
+                              {inventory.unexpectedNodes.length > 0 && (
                                 <div>
-                                  <strong>Unexpected nodes:</strong>
+                                  <strong>Nodes not listed in opensearch.hosts:</strong>
                                   <ul>
-                                    {nodeDifferences.extraNodes.map(node => (
+                                    {inventory.unexpectedNodes.map(node => (
                                       <li key={node}>{node}</li>
                                     ))}
                                   </ul>
@@ -1118,6 +1137,21 @@ export const MonitoringApp = ({
                             color='danger'
                             style={{ marginLeft: '5px' }}
                           />
+                        </EuiToolTip>
+                      )}
+                      {inventoryReady && inventory.reason === 'no_match' && (
+                        <EuiToolTip
+                          position='bottom'
+                          content={
+                            'None of the hosts in opensearch.hosts (' +
+                            (clusterConfig?.hosts ?? []).map(h => h.host).join(', ') +
+                            ') matches a cluster node by name, host name or address. ' +
+                            'They are probably a load balancer or proxy, so missing-node ' +
+                            'detection is disabled. List the nodes themselves in ' +
+                            'opensearch.hosts to enable it.'
+                          }
+                        >
+                          <EuiIcon type='iInCircle' style={{ marginLeft: '5px' }} />
                         </EuiToolTip>
                       )}
                     </span>
@@ -1315,7 +1349,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.unassigned_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
+                  titleColor={(clusterHealth?.unassigned_shards ?? 0) > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1330,7 +1364,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.initializing_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
+                  titleColor={(clusterHealth?.initializing_shards ?? 0) > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1345,7 +1379,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.active_shards_percent_as_number < 100 ? STATUS_DANGER : STATUS_GOOD}
+                  titleColor={(clusterHealth?.active_shards_percent_as_number ?? 100) < 100 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1442,7 +1476,10 @@ export const MonitoringApp = ({
           <EuiPageContentBody>
             {nodesData.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
-                <NetworkGraph nodes={nodesData} missingNodes={nodeDifferences.missingNodes} />
+                <NetworkGraph
+                  nodes={nodesData}
+                  missingNodes={inventory.reliable ? inventory.missingHosts : []}
+                />
               </div>
             ) : (
               <EuiText textAlign="center">
@@ -1485,11 +1522,24 @@ export const MonitoringApp = ({
                   </EuiFlexItem>
                   <EuiFlexItem grow={false}>
                     <EuiFlexGroup alignItems="center" gutterSize="s">
-                      {lastRefreshTime && (
+                      {lastSuccessTime && (
                         <EuiFlexItem grow={false}>
                           <EuiText color="subdued" size="s">
-                            Last update: {lastRefreshTime}
+                            Last update: {lastSuccessTime.toLocaleTimeString()}
                           </EuiText>
+                        </EuiFlexItem>
+                      )}
+                      {failedSources.length > 0 && lastAttemptTime && (
+                        <EuiFlexItem grow={false}>
+                          <EuiToolTip
+                            position="bottom"
+                            content={
+                              `Refresh at ${lastAttemptTime.toLocaleTimeString()} could not load: ` +
+                              `${failedSources.join(', ')}. Other sections show their latest successful data.`
+                            }
+                          >
+                            <EuiIcon type="alert" color="warning" aria-label="Some data failed to refresh" />
+                          </EuiToolTip>
                         </EuiFlexItem>
                       )}
                       <EuiFlexItem grow={false}>
@@ -1503,9 +1553,9 @@ export const MonitoringApp = ({
                         <EuiFlexItem grow={false} style={{ width: '125px' }}>
                           <EuiFieldNumber
                             placeholder="Interval (seconds)"
-                            value={refreshInterval}
+                            value={intervalInput}
                             onChange={handleIntervalChange}
-                            min={30}
+                            min={MIN_REFRESH_INTERVAL_SECONDS}
                             step={5}
                             isInvalid={!isIntervalValid}
                             append={<EuiText size="xs"><span>sec</span></EuiText>}
@@ -1516,7 +1566,8 @@ export const MonitoringApp = ({
                       {autoRefresh && !isIntervalValid && (
                         <EuiFlexItem grow={false}>
                           <EuiText color="danger" size="xs">
-                            Minimum interval is 30 seconds
+                            {`Enter a number of at least ${MIN_REFRESH_INTERVAL_SECONDS} seconds; ` +
+                              `still refreshing every ${refreshInterval}s`}
                           </EuiText>
                         </EuiFlexItem>
                       )}
@@ -1545,7 +1596,7 @@ export const MonitoringApp = ({
                     tableCaption='OpenSearch Cluster Nodes'
                     items={nodesData}
                     columns={nodesColumns}
-                    loading={loading}
+                    loading={nodesLoading}
                     pagination={true}
                     sorting={{
                       sort: {
@@ -1628,7 +1679,7 @@ export const MonitoringApp = ({
                     tableCaption='OpenSearch Shards Recovery'
                     items={recoveryData}
                     columns={recoveryColumns}
-                    loading={loading}
+                    loading={recoveryLoading}
                     pagination={true}
                     sorting={{
                       sort: {
@@ -1637,13 +1688,11 @@ export const MonitoringApp = ({
                       },
                     }}
                     search={{
-                      query: searchQuery,
-                      onChange: ({ query }) => setSearchQuery(query ? query.text : ''),
                       box: {
                         incremental: true,
                         placeholder: hideDone
-                          ? 'Search (excluding completed items)'
-                          : 'Search all items',
+                          ? 'Search ongoing recoveries'
+                          : 'Search ongoing and completed recoveries',
                       },
                     }}
                   />

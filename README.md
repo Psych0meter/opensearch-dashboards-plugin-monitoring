@@ -10,11 +10,12 @@ It gives cluster operators an at-a-glance view of cluster health, node resource 
 
 ## Features
 
-- **Cluster overview** — name, status, uptime, version, and running snapshot count at a glance.
+- **Cluster overview** — name, status, node uptime (shortest and longest JVM uptime, so recent restarts stand out), version, and running snapshot count at a glance.
 - **Node stats** — active/cluster-manager/data/ingest/master node counts, storage usage, JVM heap, and JVM thread count, with a tooltip on OS memory explaining why it commonly reads near 100% on a healthy node (Linux page cache) and pointing at JVM heap as the more actionable signal.
 - **Cluster Nodes table** — per-node CPU, memory (OS + JVM heap), swap, filesystem, and version, sortable and searchable.
-- **Graph View** — cluster topology grouped by zone and role, with a dedicated card for nodes that are configured but not currently reporting. Column count adapts to window width automatically, so it stays readable whether there are 2 zones or 20.
-- **Shards, Indices, Recovery, and Snapshots** views, all with color-coded status.
+- **Graph View** — cluster topology grouped by zone and role, with a dedicated card for nodes that are configured but not currently reporting. Column count adapts to window width automatically, so it stays readable whether there are 2 zones or 20. Follows the light/dark theme, and the topology is also exposed to screen readers.
+- **Shards, Indices, Recovery, and Snapshots** views, all with color-coded status. Shard Recovery shows ongoing recoveries by default; completed ones are only requested when you turn off "Hide completed items". Completed entries are the latest recovery of each shard copy still in the cluster, not a full history.
+- **Auto-refresh** — optional, every 30 seconds or more. A refresh never overlaps the previous one, polling pauses while the browser tab is hidden, and a warning icon next to "Last update" lists any data source that failed.
 - All status/threshold colors are sourced from OpenSearch Dashboards' own default palette (`euiPaletteForStatus`, `euiPaletteColorBlind`, `euiPaletteGray`) rather than hardcoded values, so the plugin stays visually consistent with the rest of OSD and with whatever the platform's default palette becomes in the future.
 
 ## Prerequisites
@@ -89,7 +90,7 @@ Use this when you just want a distributable `.zip` of the plugin — for example
 ```bash
 # From inside your clone of this plugin repo
 PLUGIN_DIR="$(pwd)"
-OSD_VER=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)   # e.g. "3.8.0"
+OSD_VER=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)   # e.g. "3.9.0"
 
 # 1) Shallow-clone OpenSearch Dashboards at that version, as a sibling directory
 cd ..
@@ -144,16 +145,29 @@ After building, re-run step 3 (`rsync`) to pick up further changes and re-run st
 
 ## Configuration
 
-No plugin-specific configuration is required. The "missing nodes" detection in Graph View and the Nodes stat is derived automatically from `opensearch.hosts` in your `config/opensearch_dashboards.yml` — whatever hosts OSD is already configured to talk to are treated as the expected node inventory:
+No plugin-specific configuration is required. The "missing nodes" detection in Graph View and the Nodes stat uses `opensearch.hosts` from your `config/opensearch_dashboards.yml` as the expected node inventory:
 
 ```yaml
 opensearch:
   hosts: ["https://NODE1_FQDN:9200", "https://NODE2_FQDN:9200", "https://NODE3_FQDN:9200", ...]
 ```
 
+A configured host counts as present when it matches a reporting node by any of:
+
+- node name, host name or IP address, including the node's transport and HTTP publish addresses;
+- short host name (`node1.example.com` matches a node named `node1`);
+- the IP addresses the host resolves to (resolved by the Dashboards server, cached for 5 minutes).
+
+Configured hosts that match no node are listed as missing; nodes that no configured host matches are listed as unexpected. A single name resolving to several nodes (round-robin DNS) accounts for all of them.
+
+If `opensearch.hosts` points at a load balancer or proxy, none of its hosts match a node: the plugin then disables missing-node alarms and shows an info icon instead of reporting false alarms. List the nodes themselves in `opensearch.hosts` to get missing-node detection.
+
 > **Note:** versions prior to 1.1.1 required a separate `monitoring.nodes` entry. That key is deprecated (the plugin logs a warning at startup if it's still set) and can be removed — it's no longer read.
 
 ## Required permissions
+
+Every request is made with the signed-in user's credentials. A user missing one of these privileges gets an error naming the privilege for the affected section; the other sections keep working.
+
 
 - cluster:admin/snapshot/status
 - cluster:monitor/health
@@ -161,6 +175,27 @@ opensearch:
 - cluster:monitor/nodes/stats
 - cluster:monitor/stats
 - indices:monitor/recovery
+
+---
+
+## Development
+
+From the plugin directory, inside a bootstrapped OpenSearch Dashboards checkout:
+
+```bash
+yarn lint   # ESLint
+yarn test   # Jest unit tests (formatters, error mapping, node matching, auto-refresh)
+```
+
+## Releasing
+
+Releases are built and published by `.github/workflows/release.yml`:
+
+1. Update `version` in both `package.json` and `opensearch_dashboards.json`, and set `opensearchDashboardsVersion` to the exact OpenSearch Dashboards version you target.
+2. Move the `[Unreleased]` entries of `CHANGELOG.md` into a section named after the tag, e.g. `## [v1.2.0-osd3.9.0] - YYYY-MM-DD`, and update the links at the bottom.
+3. Push the tag `vX.Y.Z-osdA.B.C`. The workflow fails if the tag doesn't match both manifest versions, or if the CHANGELOG has no section for it; otherwise it lints, tests, builds, checks the packaged manifest and publishes the zip with that CHANGELOG section as release notes.
+
+A manual run (`workflow_dispatch`) without `release_tag` only builds, and can target another Dashboards version through `osd_version` for testing; the zip is uploaded as a workflow artifact.
 
 ---
 
