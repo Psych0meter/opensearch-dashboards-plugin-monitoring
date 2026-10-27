@@ -35,6 +35,8 @@ import {
   ClusterStatsSummary as ClusterStats,
   NodeStats as ClusterNode,
   RecoveryStats as ClusterIndex,
+  ExpectedHost,
+  compareInventory,
 } from '../../common';
 import { NetworkGraph } from './NetworkGraph';
 
@@ -74,7 +76,7 @@ interface ClusterHealth {
  * Interface representing cluster configuration
  */
 interface ClusterConfig {
-  nodes: string[];
+  hosts: ExpectedHost[];
 }
 
 /**
@@ -469,28 +471,20 @@ export const MonitoringApp = ({
   const toggleHideDone = () => setHideDone(!hideDone);
 
   /**
-   * Compares configured nodes with actual nodes to find differences
-   * @param configNodes - Array of configured node names
-   * @param actualNodes - Array of actual cluster nodes
-   * @returns Object with missingNodes and extraNodes arrays
+   * Configured-vs-actual node comparison, computed once per data change.
+   * Feeds the Nodes stat and the Graph View "Missing Nodes" card. When the
+   * configured hosts can't be matched to any node (load balancer, proxy),
+   * the comparison is flagged unreliable and no alarm is raised.
    */
-  const getNodeDifferences = (configNodes: string[], actualNodes: ClusterNode[]) => {
-    const actualNodeNames = actualNodes.map(node => node.name);
-    const missingNodes = configNodes.filter(name => !actualNodeNames.includes(name));
-    const extraNodes = actualNodeNames.filter(name => !configNodes.includes(name));
-
-    return { missingNodes, extraNodes };
-  };
-
-  /**
-   * Configured-vs-actual node diff, computed once per data change instead
-   * of on every render at each of its call-sites. Also feeds the Graph
-   * View, which shows configured nodes that aren't currently reporting.
-   */
-  const nodeDifferences = useMemo(
-    () => getNodeDifferences(clusterConfig?.nodes ?? [], nodesData),
+  const inventory = useMemo(
+    () => compareInventory(clusterConfig?.hosts ?? [], nodesData),
     [clusterConfig, nodesData]
   );
+  const inventoryReady = clusterConfig !== null && nodesData.length > 0;
+  const inventoryAlarm =
+    inventoryReady &&
+    inventory.reliable &&
+    (inventory.missingHosts.length > 0 || inventory.unexpectedNodes.length > 0);
 
   /**
    * Groups the current nodes by their reported version, so that when a
@@ -1044,19 +1038,20 @@ export const MonitoringApp = ({
                     <div>
                       <span
                         style={{
-                          color: clusterConfig?.nodes?.length && clusterStats
-                            ? clusterStats.nodes.total === clusterConfig.nodes.length
-                              ? STATUS_GOOD
-                              : STATUS_DANGER
-                            : SUBDUED_TEXT_COLOR,
+                          color:
+                            clusterStats && inventoryReady && inventory.reliable
+                              ? inventoryAlarm
+                                ? STATUS_DANGER
+                                : STATUS_GOOD
+                              : SUBDUED_TEXT_COLOR,
                         }}
                       >
                         {clusterStats ? clusterStats.nodes.total : '--'}
                       </span>
-                      {clusterConfig?.nodes?.length > 0 && (
+                      {inventoryReady && inventory.reliable && (
                         <span style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
                           {' '}
-                          / {clusterConfig.nodes.length}
+                          / {inventory.expectedCount}
                         </span>
                       )}
                     </div>
@@ -1064,28 +1059,26 @@ export const MonitoringApp = ({
                   description={
                     <span>
                       <EuiIcon type='node' /> Active
-                      {clusterConfig && clusterStats && 
-                      (nodeDifferences.missingNodes.length > 0 ||
-                        nodeDifferences.extraNodes.length > 0) && (
+                      {clusterStats && inventoryAlarm && (
                         <EuiToolTip
                           position='bottom'
                           content={
                             <div>
-                              {nodeDifferences.missingNodes.length > 0 && (
+                              {inventory.missingHosts.length > 0 && (
                                 <div>
-                                  <strong>Missing nodes:</strong>
+                                  <strong>Configured hosts not reporting:</strong>
                                   <ul>
-                                    {nodeDifferences.missingNodes.map(node => (
-                                      <li key={node}>{node}</li>
+                                    {inventory.missingHosts.map(host => (
+                                      <li key={host}>{host}</li>
                                     ))}
                                   </ul>
                                 </div>
                               )}
-                              {nodeDifferences.extraNodes.length > 0 && (
+                              {inventory.unexpectedNodes.length > 0 && (
                                 <div>
-                                  <strong>Unexpected nodes:</strong>
+                                  <strong>Nodes not listed in opensearch.hosts:</strong>
                                   <ul>
-                                    {nodeDifferences.extraNodes.map(node => (
+                                    {inventory.unexpectedNodes.map(node => (
                                       <li key={node}>{node}</li>
                                     ))}
                                   </ul>
@@ -1099,6 +1092,21 @@ export const MonitoringApp = ({
                             color='danger'
                             style={{ marginLeft: '5px' }}
                           />
+                        </EuiToolTip>
+                      )}
+                      {inventoryReady && inventory.reason === 'no_match' && (
+                        <EuiToolTip
+                          position='bottom'
+                          content={
+                            'None of the hosts in opensearch.hosts (' +
+                            (clusterConfig?.hosts ?? []).map(h => h.host).join(', ') +
+                            ') matches a cluster node by name, host name or address. ' +
+                            'They are probably a load balancer or proxy, so missing-node ' +
+                            'detection is disabled. List the nodes themselves in ' +
+                            'opensearch.hosts to enable it.'
+                          }
+                        >
+                          <EuiIcon type='iInCircle' style={{ marginLeft: '5px' }} />
                         </EuiToolTip>
                       )}
                     </span>
@@ -1423,7 +1431,10 @@ export const MonitoringApp = ({
           <EuiPageContentBody>
             {nodesData.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
-                <NetworkGraph nodes={nodesData} missingNodes={nodeDifferences.missingNodes} />
+                <NetworkGraph
+                  nodes={nodesData}
+                  missingNodes={inventory.reliable ? inventory.missingHosts : []}
+                />
               </div>
             ) : (
               <EuiText textAlign="center">

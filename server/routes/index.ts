@@ -8,6 +8,7 @@ import { formatNodeStats } from './utils/formatNodeStats';
 import { formatRecoveryStats } from './utils/formatRecoveryStats';
 import { formatClusterStats } from './utils/formatClusterStats';
 import { sanitizeError } from './errors';
+import { HostResolver, getConfiguredHosts } from './inventory';
 import { PLUGIN_ID } from '../../common';
 import { schema, Type } from '@osd/config-schema';
 
@@ -184,24 +185,18 @@ export function defineRoutes(router: IRouter, logger: Logger) {
   });
 
   // Plugin config - the expected node inventory, derived from the live
-  // OpenSearch client's connection pool (built from opensearch.hosts).
+  // OpenSearch client's connection pool (built from opensearch.hosts), with
+  // each host resolved to its addresses so the browser can match it against
+  // node names, host names and publish addresses (see
+  // common/node_inventory.ts).
+  const resolver = new HostResolver();
   createRoute(router, logger, {
     path: '/config',
     resource: 'the configured node inventory',
     privilege: 'none',
     handler: async (context) => {
-      const transport = context.core.opensearch.client.asCurrentUser?.transport as
-        | { connectionPool?: { connections?: { url?: URL }[] } }
-        | undefined;
-      const connections = transport?.connectionPool?.connections ?? [];
-      const nodes = Array.from(
-        new Set(
-          connections
-            .map((connection) => connection.url?.hostname)
-            .filter((hostname): hostname is string => Boolean(hostname))
-        )
-      );
-      return { data: { nodes } };
+      const hosts = getConfiguredHosts(context.core.opensearch.client.asCurrentUser?.transport);
+      return { data: { hosts: await resolver.resolveAll(hosts) } };
     },
   });
 
