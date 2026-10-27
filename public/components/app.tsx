@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { FormattedMessage, I18nProvider } from '@osd/i18n/react';
 import { BrowserRouter as Router } from 'react-router-dom';
 import {
@@ -39,6 +39,13 @@ import {
   compareInventory,
 } from '../../common';
 import { NetworkGraph } from './NetworkGraph';
+import {
+  MIN_REFRESH_INTERVAL_SECONDS,
+  parseRefreshInterval,
+  sanitizeStoredInterval,
+  singleFlight,
+  startPolling,
+} from '../refresh';
 
 const STATUS_PALETTE = euiPaletteForStatus(3);
 const [STATUS_GOOD, STATUS_WARNING, STATUS_DANGER] = STATUS_PALETTE;
@@ -200,16 +207,22 @@ export const MonitoringApp = ({
   const [clusterConfig, setClusterConfig] = useState<ClusterConfig | null>(null);
   const [snapshotsData, setSnapshotsData] = useState<Snapshot[]>([]);
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [nodesLoading, setNodesLoading] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [hideDone, setHideDone] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(
-    getLocalStorageItem(`${PLUGIN_ID}.autoRefresh`, false)
+    getLocalStorageItem<unknown>(`${PLUGIN_ID}.autoRefresh`, false) === true
   );
-  const [refreshInterval, setRefreshInterval] = useState(
-    getLocalStorageItem(`${PLUGIN_ID}.refreshInterval`, 30)
+  // `refreshInterval` is always a valid interval; `intervalInput` holds
+  // whatever is being typed, and is only committed once it parses.
+  const [refreshInterval, setRefreshInterval] = useState(() =>
+    sanitizeStoredInterval(getLocalStorageItem<unknown>(`${PLUGIN_ID}.refreshInterval`, null))
   );
-  const [isIntervalValid, setIsIntervalValid] = useState(true);
-  const [lastRefreshTime, setLastRefreshTime] = useState<string>('');
+  const [intervalInput, setIntervalInput] = useState(() => String(refreshInterval));
+  const isIntervalValid = parseRefreshInterval(intervalInput) !== null;
+  const [lastSuccessTime, setLastSuccessTime] = useState<Date | null>(null);
+  const [lastAttemptTime, setLastAttemptTime] = useState<Date | null>(null);
+  const [failedSources, setFailedSources] = useState<string[]>([]);
 
   const [clusterHealthLoading, setClusterHealthLoading] = useState(false);
   const [clusterStatsLoading, setClusterStatsLoading] = useState(false);
@@ -218,11 +231,6 @@ export const MonitoringApp = ({
   const setAutoRefreshPersisted = (value: boolean) => {
     setAutoRefresh(value);
     setLocalStorageItem(`${PLUGIN_ID}.autoRefresh`, value);
-  };
-
-  const setRefreshIntervalPersisted = (value: number) => {
-    setRefreshInterval(value);
-    setLocalStorageItem(`${PLUGIN_ID}.refreshInterval`, value);
   };
 
   const VerticalSeparator = () => (
@@ -235,24 +243,18 @@ export const MonitoringApp = ({
   );
 
   /**
-   * Validates the refresh interval value
-   * @param value - The interval value in seconds
-   * @returns boolean - True if the interval is valid (>= 30 seconds)
-   */
-  const validateInterval = (value: number) => {
-    const isValid = value >= 30;
-    setIsIntervalValid(isValid);
-    return isValid;
-  };
-
-  /**
-   * Handles changes to the refresh interval input
-   * @param e - The change event from the input
+   * Handles changes to the refresh interval input. Invalid values (empty,
+   * non-numeric, below the minimum) are shown as invalid but never applied
+   * or persisted, so the polling loop always runs on a valid interval.
    */
   const handleIntervalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = parseInt(e.target.value, 10);
-    setRefreshIntervalPersisted(value);
-    validateInterval(value);
+    const raw = e.target.value;
+    setIntervalInput(raw);
+    const parsed = parseRefreshInterval(raw);
+    if (parsed !== null) {
+      setRefreshInterval(parsed);
+      setLocalStorageItem(`${PLUGIN_ID}.refreshInterval`, parsed);
+    }
   };
 
   /**
@@ -361,108 +363,115 @@ export const MonitoringApp = ({
     );
   };
 
-  // Data fetching functions
-  const fetchConfig = useCallback(async () => {
+  // Data fetching
+  //
+  // Each fetcher manages its own loading flag and resolves to `true` on
+  // success, `false` on failure (never rejects), so one failing source can't
+  // hide another's state and the caller knows what actually succeeded.
+  //
+  // Failures are toasted once when a source starts failing, not on every
+  // auto-refresh while it keeps failing.
+  const failingSourcesRef = useRef<Set<string>>(new Set());
+
+  const reportResult = useCallback(
+    (source: string, title: string, err?: any): boolean => {
+      const failing = failingSourcesRef.current;
+      if (err === undefined) {
+        failing.delete(source);
+        return true;
+      }
+      if (!failing.has(source)) {
+        failing.add(source);
+        notifications.toasts.addDanger({
+          title,
+          text: err?.body?.message || 'An unexpected error occurred',
+        });
+      }
+      return false;
+    },
+    [notifications]
+  );
+
+  const fetchConfig = useCallback(async (): Promise<boolean> => {
+    setClusterConfigLoading(true);
     try {
-      setClusterConfigLoading(true);
       const res = await http.get(`/api/${PLUGIN_ID}/config`);
       setClusterConfig(res.data);
+      return reportResult('config', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch configuration',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('config', 'Failed to fetch configuration', err);
     } finally {
       setClusterConfigLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchCluster = useCallback(async () => {
+  const fetchCluster = useCallback(async (): Promise<boolean> => {
+    setClusterHealthLoading(true);
     try {
-      setClusterHealthLoading(true);
       const res = await http.get(`/api/${PLUGIN_ID}/cluster_health`);
       setClusterHealth(res.data);
+      return reportResult('cluster health', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch cluster data',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('cluster health', 'Failed to fetch cluster health', err);
     } finally {
       setClusterHealthLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchNodes = useCallback(async () => {
+  const fetchNodes = useCallback(async (): Promise<boolean> => {
+    setNodesLoading(true);
     try {
-      setLoading(true);
       const nodes = await http.get(`/api/${PLUGIN_ID}/nodes_stats`);
       setNodesData(nodes);
+      return reportResult('nodes', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch nodes data',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('nodes', 'Failed to fetch nodes data', err);
     } finally {
-      setLoading(false);
+      setNodesLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchRecovery = useCallback(async () => {
+  const fetchRecovery = useCallback(async (): Promise<boolean> => {
+    setRecoveryLoading(true);
     try {
-      setLoading(true);
       const recovData = await http.get(`/api/${PLUGIN_ID}/recovery`, {
         query: { include_completed: !hideDone },
       });
       setRecoveryData(recovData);
+      return reportResult('recovery', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch recovery data',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('recovery', 'Failed to fetch recovery data', err);
     } finally {
-      setLoading(false);
+      setRecoveryLoading(false);
     }
-  }, [http, notifications, hideDone]);
+  }, [http, reportResult, hideDone]);
 
-  const fetchClusterStats = useCallback(async () => {
+  const fetchClusterStats = useCallback(async (): Promise<boolean> => {
+    setClusterStatsLoading(true);
     try {
-      setClusterStatsLoading(true);
       const parsedData = await http.get(`/api/${PLUGIN_ID}/cluster_stats`);
       setClusterStats(parsedData);
+      return reportResult('cluster stats', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch cluster stats',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
+      return reportResult('cluster stats', 'Failed to fetch cluster stats', err);
     } finally {
       setClusterStatsLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
-  const fetchSnapshots = useCallback(async () => {
+  const fetchSnapshots = useCallback(async (): Promise<boolean> => {
+    setSnapshotsLoading(true);
     try {
-      setSnapshotsLoading(true);
       const response = await http.get(`/api/${PLUGIN_ID}/snapshots`);
-      
-      if (response?.snapshots) {
-        setSnapshotsData(response.snapshots);
-      } else {
-        notifications.toasts.addWarning({
-          title: 'No snapshot data available',
-          text: 'The snapshots API returned no data',
-        });
-        setSnapshotsData([]);
-      }
+      setSnapshotsData(Array.isArray(response?.snapshots) ? response.snapshots : []);
+      return reportResult('snapshots', '');
     } catch (err) {
-      notifications.toasts.addDanger({
-        title: 'Failed to fetch snapshots',
-        text: err?.body?.message || 'An unexpected error occurred',
-      });
       setSnapshotsData([]);
+      return reportResult('snapshots', 'Failed to fetch snapshots', err);
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, reportResult]);
 
   /**
    * Toggles the display of completed recovery items. Completed recoveries
@@ -523,40 +532,63 @@ export const MonitoringApp = ({
     };
   }, [nodesData]);
 
-  // Effect for auto-refreshing data
+  /**
+   * Refreshes every section. Concurrent calls share the in-flight run, so a
+   * manual toggle can't stack a second round of requests on top of a poll.
+   * "Last update" only advances when every source succeeded.
+   */
+  const refreshAll = useCallback(async () => {
+    setLastAttemptTime(new Date());
+    const sources: [string, () => Promise<boolean>][] = [
+      ['cluster health', fetchCluster],
+      ['nodes', fetchNodes],
+      ['recovery', fetchRecovery],
+      ['cluster stats', fetchClusterStats],
+      ['config', fetchConfig],
+      ['snapshots', fetchSnapshots],
+    ];
+    const results = await Promise.all(sources.map(([, fetch]) => fetch()));
+    const failed = sources.filter((_, i) => !results[i]).map(([name]) => name);
+    setFailedSources(failed);
+    if (failed.length === 0) setLastSuccessTime(new Date());
+  }, [fetchCluster, fetchNodes, fetchRecovery, fetchClusterStats, fetchConfig, fetchSnapshots]);
+
+  // Always call the latest refreshAll through a single-flight wrapper whose
+  // identity never changes, so the polling loop isn't restarted (and no
+  // extra request is fired) whenever a fetcher's dependencies change.
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
+  const runRefresh = useMemo(() => singleFlight(() => refreshAllRef.current()), []);
+
+  // Initial load
   useEffect(() => {
-    let intervalId: NodeJS.Timeout;
+    void runRefresh();
+  }, [runRefresh]);
 
-    const fetchAllData = async () => {
-      try {
-        await Promise.all([
-          fetchCluster(),
-          fetchNodes(),
-          fetchRecovery(),
-          fetchClusterStats(),
-          fetchConfig(),
-          fetchSnapshots()
-        ]);
-        setLastRefreshTime(new Date().toLocaleTimeString());
-      } catch (error) {
-        console.error('Error refreshing data:', error);
-      }
-    };
-
-    // Initial fetch
-    fetchAllData();
-
-    // Set up interval if autoRefresh is enabled
-    if (autoRefresh && isIntervalValid) {
-      intervalId = setInterval(fetchAllData, refreshInterval * 1000);
+  // Refetch recoveries when switching between ongoing-only and all.
+  const isFirstHideDoneRender = useRef(true);
+  useEffect(() => {
+    if (isFirstHideDoneRender.current) {
+      isFirstHideDoneRender.current = false;
+      return;
     }
+    void fetchRecovery();
+  }, [fetchRecovery]);
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [autoRefresh, refreshInterval, isIntervalValid, 
-      fetchCluster, fetchNodes, fetchRecovery, 
-      fetchClusterStats, fetchConfig, fetchSnapshots]);
+  // Auto-refresh: chained timeouts (no overlap), paused while the tab is
+  // hidden, resumed with an immediate refresh when it becomes visible.
+  useEffect(() => {
+    if (!autoRefresh) return undefined;
+    return startPolling({
+      intervalMs: refreshInterval * 1000,
+      run: runRefresh,
+      isHidden: () => typeof document !== 'undefined' && document.hidden,
+      onVisibilityChange: (listener) => {
+        document.addEventListener('visibilitychange', listener);
+        return () => document.removeEventListener('visibilitychange', listener);
+      },
+    });
+  }, [autoRefresh, refreshInterval, runRefresh]);
 
   // Table columns configuration
   const nodesColumns: EuiBasicTableColumn<ClusterNode>[] = [
@@ -1477,11 +1509,24 @@ export const MonitoringApp = ({
                   </EuiFlexItem>
                   <EuiFlexItem grow={false}>
                     <EuiFlexGroup alignItems="center" gutterSize="s">
-                      {lastRefreshTime && (
+                      {lastSuccessTime && (
                         <EuiFlexItem grow={false}>
                           <EuiText color="subdued" size="s">
-                            Last update: {lastRefreshTime}
+                            Last update: {lastSuccessTime.toLocaleTimeString()}
                           </EuiText>
+                        </EuiFlexItem>
+                      )}
+                      {failedSources.length > 0 && lastAttemptTime && (
+                        <EuiFlexItem grow={false}>
+                          <EuiToolTip
+                            position="bottom"
+                            content={
+                              `Refresh at ${lastAttemptTime.toLocaleTimeString()} could not load: ` +
+                              `${failedSources.join(', ')}. Other sections show their latest successful data.`
+                            }
+                          >
+                            <EuiIcon type="alert" color="warning" aria-label="Some data failed to refresh" />
+                          </EuiToolTip>
                         </EuiFlexItem>
                       )}
                       <EuiFlexItem grow={false}>
@@ -1495,9 +1540,9 @@ export const MonitoringApp = ({
                         <EuiFlexItem grow={false} style={{ width: '125px' }}>
                           <EuiFieldNumber
                             placeholder="Interval (seconds)"
-                            value={refreshInterval}
+                            value={intervalInput}
                             onChange={handleIntervalChange}
-                            min={30}
+                            min={MIN_REFRESH_INTERVAL_SECONDS}
                             step={5}
                             isInvalid={!isIntervalValid}
                             append={<EuiText size="xs"><span>sec</span></EuiText>}
@@ -1508,7 +1553,8 @@ export const MonitoringApp = ({
                       {autoRefresh && !isIntervalValid && (
                         <EuiFlexItem grow={false}>
                           <EuiText color="danger" size="xs">
-                            Minimum interval is 30 seconds
+                            {`Enter a number of at least ${MIN_REFRESH_INTERVAL_SECONDS} seconds; ` +
+                              `still refreshing every ${refreshInterval}s`}
                           </EuiText>
                         </EuiFlexItem>
                       )}
@@ -1537,7 +1583,7 @@ export const MonitoringApp = ({
                     tableCaption='OpenSearch Cluster Nodes'
                     items={nodesData}
                     columns={nodesColumns}
-                    loading={loading}
+                    loading={nodesLoading}
                     pagination={true}
                     sorting={{
                       sort: {
@@ -1620,7 +1666,7 @@ export const MonitoringApp = ({
                     tableCaption='OpenSearch Shards Recovery'
                     items={recoveryData}
                     columns={recoveryColumns}
-                    loading={loading}
+                    loading={recoveryLoading}
                     pagination={true}
                     sorting={{
                       sort: {
