@@ -715,6 +715,15 @@ export const MonitoringApp = ({
     },
   ];
 
+  // Percent columns hold strings such as "30.0%" (or "-"), which would sort
+  // lexically ("100.0%" before "9.0%"); sort on the numeric value instead,
+  // with "-" last when ascending.
+  const sortByPercent = (field: 'files_percent' | 'bytes_percent' | 'translog_percent') =>
+    (item: ClusterIndex): number => {
+      const value = parseFloat(item[field]);
+      return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
+    };
+
   const recoveryColumns: EuiBasicTableColumn<ClusterIndex>[] = [
     { field: 'index', name: 'Index', sortable: true },
     { field: 'shard', name: 'Shard', sortable: true },
@@ -745,7 +754,7 @@ export const MonitoringApp = ({
           </div>
         );
       },
-      sortable: true
+      sortable: sortByPercent('files_percent'),
     },
     {
       field: 'bytes_percent',
@@ -770,13 +779,17 @@ export const MonitoringApp = ({
           </div>
         );
       },
-      sortable: true
+      sortable: sortByPercent('bytes_percent'),
     },
     {
       field: 'translog_percent',
       name: 'Translog',
       render: (percent: string, item: ClusterIndex) => {
-        if (percent === '-') return '-';
+        if (percent === '-') {
+          // Total not known (yet) or nothing to replay: show operations
+          // replayed so far, if any, instead of a meaningless percentage.
+          return item.translog_recovered > 0 ? `${item.translog_recovered} ops` : '-';
+        }
         const numeric = parseFloat(percent);
         const label = numeric === 100
           ? `${item.translog_total}`
@@ -794,7 +807,7 @@ export const MonitoringApp = ({
           </div>
         );
       },
-      sortable: true
+      sortable: sortByPercent('translog_percent'),
     },
     {
       field: 'time',
@@ -842,7 +855,7 @@ export const MonitoringApp = ({
       field: 'shards_stats',
       name: 'Shards',
       render: (stats: { done: number; total: number }) => {
-        const percent = Math.round((stats.done / stats.total) * 100);
+        const percent = stats.total > 0 ? Math.round((stats.done / stats.total) * 100) : 0;
         return (
           <div style={{ width: '90%' }}>
             <EuiProgress

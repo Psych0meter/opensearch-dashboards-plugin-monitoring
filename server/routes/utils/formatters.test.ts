@@ -64,6 +64,19 @@ describe('formatNodeStats', () => {
     expect(result.fs).toEqual({ total: 0, used: 0, percent: 0 });
   });
 
+  it('treats OpenSearch\'s -1 "unavailable" values as zero rather than negative sizes', () => {
+    const [result] = formatNodeStats({
+      n: {
+        name: 'n',
+        os: { cpu: { percent: -1 }, mem: { used_in_bytes: -1, total_in_bytes: -1 } },
+        fs: { total: { total_in_bytes: -1, free_in_bytes: -1 } },
+      },
+    });
+    expect(result.cpu.percent).toBe(0);
+    expect(result.mem).toEqual({ total: 0, used: 0, percent: 0 });
+    expect(result.fs).toEqual({ total: 0, used: 0, percent: 0 });
+  });
+
   it('falls back to the node id when no name is reported, and tolerates empty input', () => {
     expect(formatNodeStats({ id1: {} })[0].name).toBe('id1');
     expect(formatNodeStats(undefined)).toEqual([]);
@@ -146,6 +159,86 @@ describe('formatRecoveryStats', () => {
       // nothing to replay: shown as "-" rather than a misleading percentage
       translog_percent: '-',
     });
+  });
+
+  it('does not expose OpenSearch\'s unknown (-1) totals as negative counts or percentages', () => {
+    // Real shape of a peer recovery that just reached the TRANSLOG stage
+    // with no file copy: totals are still unknown and percent is "-1.0%".
+    const [row] = formatRecoveryStats({
+      '.ds-logs-restena-custom-000298': {
+        shards: [
+          {
+            id: 0,
+            type: 'PEER',
+            stage: 'TRANSLOG',
+            total_time_in_millis: 318,
+            source: { host: '10.0.0.3', name: 'lucy-test03.restena.lu' },
+            target: { host: '10.0.0.2', name: 'lucy-test02.restena.lu' },
+            index: {
+              size: { total_in_bytes: 0, recovered_in_bytes: 0, percent: '0.0%' },
+              files: { total: 0, recovered: 0, percent: '0.0%' },
+            },
+            translog: { recovered: 0, total: -1, percent: '-1.0%' },
+          },
+        ],
+      },
+    });
+    expect(row.translog_total).toBe(0);
+    expect(row.translog_recovered).toBe(0);
+    expect(row.translog_percent).toBe('-');
+    expect(row.files_percent).toBe('-');
+    expect(row.bytes_percent).toBe('-');
+  });
+
+  it('prefers the upstream percentage, which excludes reused files', () => {
+    const [row] = formatRecoveryStats({
+      logs: {
+        shards: [
+          {
+            id: 1,
+            stage: 'INDEX',
+            index: {
+              // 8 of 10 files are reused: upstream reports 50% of the 2
+              // files to copy done although 9/10 files count as recovered.
+              size: { total_in_bytes: 1000, recovered_in_bytes: 900, percent: '50.0%' },
+              files: { total: 10, recovered: 9, percent: '50.0%' },
+            },
+          },
+        ],
+      },
+    });
+    expect(row.files_percent).toBe('50.0%');
+    expect(row.bytes_percent).toBe('50.0%');
+  });
+
+  it('falls back to the counters when the upstream percentage is unusable, within 0-100%', () => {
+    const [row] = formatRecoveryStats({
+      logs: {
+        shards: [
+          {
+            id: 1,
+            stage: 'TRANSLOG',
+            index: {
+              size: { total_in_bytes: 400, recovered_in_bytes: 100 },
+              files: { total: 3, recovered: 4, percent: '-1.0%' },
+            },
+            translog: { recovered: 50, total: 200, percent: 'garbage' },
+          },
+        ],
+      },
+    });
+    expect(row.bytes_percent).toBe('25.0%');
+    expect(row.files_percent).toBe('100.0%');
+    expect(row.translog_percent).toBe('25.0%');
+    expect(row.translog_total).toBe(200);
+  });
+
+  it('keeps the operations replayed so far when the translog total is unknown', () => {
+    const [row] = formatRecoveryStats({
+      logs: { shards: [{ id: 1, stage: 'TRANSLOG', translog: { recovered: 12, total: -1 } }] },
+    });
+    expect(row.translog_percent).toBe('-');
+    expect(row.translog_recovered).toBe(12);
   });
 
   it('formats a completed existing-store recovery with no source node', () => {

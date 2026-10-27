@@ -42,6 +42,9 @@ the `-osd` suffix is the exact OpenSearch Dashboards version the build targets.
 - The Cluster Nodes and Shard Recovery tables could stop showing their loading state while their own request was still running.
 - A node omitting part of its statistics (e.g. while starting) made the whole Nodes and Cluster sections fail.
 - Durations shorter than one minute were displayed as an empty value.
+- Shard Recovery showed `0 / -1` and `-1%` in the Translog column while a peer recovery was starting; OpenSearch's "unknown" `-1` values are no longer shown. Progress now uses OpenSearch's own percentage, which excludes reused files, and the percentage columns sort numerically.
+- Node CPU, memory, swap and filesystem values that OpenSearch reports as `-1` (unavailable) are shown as 0 instead of negative sizes.
+- The snapshot Shards progress bar showed `NaN` for a snapshot that had no shards counted yet.
 
 ### Security
 

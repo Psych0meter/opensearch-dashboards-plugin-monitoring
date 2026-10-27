@@ -1,18 +1,20 @@
 import { UsageStat } from '../../../common/types';
 
 /**
- * Returns `value` when it is a finite number, otherwise `fallback`.
- * Used to normalize upstream metrics that may be absent or malformed.
+ * Returns `value` when it is a finite, non-negative number, otherwise
+ * `fallback`. OpenSearch reports -1 for metrics it cannot determine (CPU
+ * percent on some platforms, filesystem or swap totals, unknown translog
+ * totals); those must not reach the UI as negative sizes or percentages.
  */
 export function toNumber(value: unknown, fallback = 0): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 /**
- * Returns `value` when it is a finite number, otherwise `null`.
+ * Returns `value` when it is a finite, non-negative number, otherwise `null`.
  */
 export function toNullableNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 /**

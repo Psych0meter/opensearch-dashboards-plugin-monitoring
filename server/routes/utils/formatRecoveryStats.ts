@@ -1,14 +1,22 @@
 import { RecoveryStats } from '../../../common/types';
 import { toNumber } from './common';
-import { RawRecoveryProgress, RawRecoveryResponse } from './raw_types';
+import { RawRecoveryResponse } from './raw_types';
 
 /**
- * Returns the upstream percentage string, or '-' when there is nothing to
- * recover (a zero total would otherwise render as a misleading 0%).
+ * Progress as a "NN.N%" string, or '-' when there is nothing meaningful to
+ * show: an unknown or zero total (nothing to copy or replay) would otherwise
+ * render as -1% or a misleading 0%/100%.
+ *
+ * OpenSearch's own percentage is preferred because it excludes reused files
+ * from the calculation, which a plain recovered/total ratio would not. The
+ * ratio is only a fallback when the upstream value is missing or unusable
+ * (e.g. the "-1.0%" it reports for an unknown total).
  */
-function percentOrDash(total: number, progress: RawRecoveryProgress | undefined): string {
-  if (total === 0) return '-';
-  return typeof progress?.percent === 'string' ? progress.percent : '0%';
+function percentOrDash(recovered: number, total: number, upstream: unknown): string {
+  if (total <= 0) return '-';
+  const parsed = typeof upstream === 'string' ? parseFloat(upstream) : NaN;
+  const percent = Number.isFinite(parsed) && parsed >= 0 ? parsed : (recovered / total) * 100;
+  return `${Math.min(100, Math.max(0, percent)).toFixed(1)}%`;
 }
 
 export function formatRecoveryStats(rawData: RawRecoveryResponse | null | undefined): RecoveryStats[] {
@@ -25,8 +33,11 @@ export function formatRecoveryStats(rawData: RawRecoveryResponse | null | undefi
       const transLog = shard.translog;
 
       const filesTotal = toNumber(indexFiles?.total);
+      const filesRecovered = toNumber(indexFiles?.recovered);
       const bytesTotal = toNumber(indexSize?.total_in_bytes);
+      const bytesRecovered = toNumber(indexSize?.recovered_in_bytes);
       const translogTotal = toNumber(transLog?.total);
+      const translogRecovered = toNumber(transLog?.recovered);
 
       parsedData.push({
         index: indexName,
@@ -39,15 +50,15 @@ export function formatRecoveryStats(rawData: RawRecoveryResponse | null | undefi
         target_host: target.host ?? '-',
         target_node: target.name ?? '-',
         files: filesTotal,
-        files_recovered: toNumber(indexFiles?.recovered),
-        files_percent: percentOrDash(filesTotal, indexFiles),
+        files_recovered: filesRecovered,
+        files_percent: percentOrDash(filesRecovered, filesTotal, indexFiles?.percent),
         files_total: filesTotal,
-        bytes: toNumber(indexSize?.recovered_in_bytes),
-        bytes_recovered: toNumber(indexSize?.recovered_in_bytes),
-        bytes_percent: percentOrDash(bytesTotal, indexSize),
+        bytes: bytesRecovered,
+        bytes_recovered: bytesRecovered,
+        bytes_percent: percentOrDash(bytesRecovered, bytesTotal, indexSize?.percent),
         bytes_total: bytesTotal,
-        translog_recovered: toNumber(transLog?.recovered),
-        translog_percent: percentOrDash(translogTotal, transLog),
+        translog_recovered: translogRecovered,
+        translog_percent: percentOrDash(translogRecovered, translogTotal, transLog?.percent),
         translog_total: translogTotal,
       });
     });
