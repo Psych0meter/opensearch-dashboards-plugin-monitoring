@@ -9,6 +9,8 @@ the `-osd` suffix is the exact OpenSearch Dashboards version the build targets.
 
 ## [Unreleased]
 
+## [v1.2.0-osd3.9.0] - 2026-10-27
+
 ### Added
 
 - Node Uptime stat showing the shortest and longest JVM uptime across nodes, with a tooltip naming both nodes, and an Uptime column in the Cluster Nodes table.
@@ -139,7 +141,8 @@ the `-osd` suffix is the exact OpenSearch Dashboards version the build targets.
 
 - Initial 1.0.0 release, targeting OpenSearch Dashboards 3.6.0.
 
-[Unreleased]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.9.0...HEAD
+[Unreleased]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.2.0-osd3.9.0...HEAD
+[v1.2.0-osd3.9.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.9.0...v1.2.0-osd3.9.0
 [v1.1.1-osd3.9.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.8.0...v1.1.1-osd3.9.0
 [v1.1.1-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.0-osd3.8.0...v1.1.1-osd3.8.0
 [v1.1.0-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.0.2-osd3.8.0...v1.1.0-osd3.8.0
