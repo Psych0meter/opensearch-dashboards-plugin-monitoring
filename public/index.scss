@@ -1,1 +1,30 @@
-/* stylelint-disable no-empty-source */
+// Graph View surfaces and text follow the active OpenSearch Dashboards theme
+// (light or dark): OSD prepends the theme's EUI globals when compiling this
+// file. Role and status colors stay on the categorical palette in TSX.
+// CSS properties take precedence over SVG presentation attributes.
+
+.monitoringGraph__card {
+  fill: $euiColorEmptyShade;
+  stroke: $euiBorderColor;
+}
+
+.monitoringGraph__title {
+  fill: $euiTextColor;
+}
+
+.monitoringGraph__subtitle {
+  fill: $euiTextSubduedColor;
+}
+
+.monitoringGraph__label {
+  fill: $euiTextColor;
+}
+
+.monitoringGraph__card--missing {
+  fill: rgba($euiColorDanger, 0.08);
+  stroke: $euiColorDanger;
+}
+
+.monitoringGraph__title--missing {
+  fill: $euiColorDanger;
+}

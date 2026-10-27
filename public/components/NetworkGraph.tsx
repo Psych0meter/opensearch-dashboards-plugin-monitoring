@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Group } from '@visx/group';
 import { Text } from '@visx/text';
-import { euiPaletteColorBlind } from '@elastic/eui';
+import { EuiScreenReaderOnly, euiPaletteColorBlind } from '@elastic/eui';
 
 interface Node {
   id: string;
@@ -205,20 +205,81 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes, missingNodes 
   }
 
   return (
-    <svg
-      width={totalWidth}
-      height={layout.totalHeight}
-      viewBox={`0 0 ${totalWidth} ${layout.totalHeight}`}
-      role="img"
-      aria-label="Cluster topology grouped by zone and role"
-    >
-      {cards.map((card, i) => {
-        const row = Math.floor(i / columns);
-        const col = i % columns;
-        const x = col * (CARD_WIDTH + CARD_GAP);
-        const y = layout.rowYOffsets[row];
+    <>
+      <EuiScreenReaderOnly>
+        <div>
+          <p>Cluster topology grouped by zone and role.</p>
+          {zoneCards.map(card => (
+            <section key={card.key} aria-label={`Zone ${card.zone}`}>
+              <p>{`Zone ${card.zone}: ${card.hostCount} node${card.hostCount !== 1 ? 's' : ''}`}</p>
+              <ul>
+                {card.roles.map(roleBlock => (
+                  <li key={roleBlock.role}>
+                    {`Role ${roleBlock.role}: ${roleBlock.hosts.map(h => h.name).join(', ')}`}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+          {missingCard && (
+            <p>
+              {`Missing nodes, configured but not reporting: ${missingCard.hosts.map(h => h.name).join(', ')}`}
+            </p>
+          )}
+        </div>
+      </EuiScreenReaderOnly>
+      <svg
+        width={totalWidth}
+        height={layout.totalHeight}
+        viewBox={`0 0 ${totalWidth} ${layout.totalHeight}`}
+        aria-hidden={true}
+        focusable={false}
+      >
+        {cards.map((card, i) => {
+          const row = Math.floor(i / columns);
+          const col = i % columns;
+          const x = col * (CARD_WIDTH + CARD_GAP);
+          const y = layout.rowYOffsets[row];
 
-        if (card.kind === 'missing') {
+          if (card.kind === 'missing') {
+            return (
+              <Group key={card.key} left={x} top={y}>
+                <rect
+                  x={0}
+                  y={0}
+                  width={CARD_WIDTH}
+                  height={card.height}
+                  className='monitoringGraph__card--missing'
+                  strokeWidth={1}
+                  strokeDasharray='4 3'
+                  rx={10}
+                  ry={10}
+                />
+                <Text
+                  x={CARD_WIDTH / 2}
+                  y={26}
+                  fontWeight={700}
+                  fontSize={18}
+                  textAnchor='middle'
+                  className='monitoringGraph__title--missing'
+                >
+                  Missing Nodes
+                </Text>
+                <Text x={CARD_WIDTH / 2} y={43} fontSize={12} textAnchor='middle' className='monitoringGraph__subtitle'>
+                  {`${card.hosts.length} configured, not reporting`}
+                </Text>
+                {card.hosts.map(host => (
+                  <Group key={host.name}>
+                    <circle cx={DOT_X} cy={host.y} r={DOT_RADIUS} fill={MISSING_COLOR} />
+                    <text x={LABEL_X} y={host.y} dominantBaseline='central' fontSize={13} className='monitoringGraph__label'>
+                      {host.name}
+                    </text>
+                  </Group>
+                ))}
+              </Group>
+            );
+          }
+
           return (
             <Group key={card.key} left={x} top={y}>
               <rect
@@ -226,86 +287,54 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({ nodes, missingNodes 
                 y={0}
                 width={CARD_WIDTH}
                 height={card.height}
-                fill='#FDF0F0'
-                stroke={MISSING_COLOR}
+                className='monitoringGraph__card'
                 strokeWidth={1}
-                strokeDasharray='4 3'
                 rx={10}
                 ry={10}
               />
-              <Text x={CARD_WIDTH / 2} y={26} fontWeight={700} fontSize={18} textAnchor='middle' fill={MISSING_COLOR}>
-                Missing Nodes
+              <Text x={CARD_WIDTH / 2} y={26} fontWeight={700} fontSize={18} textAnchor='middle' className='monitoringGraph__title'>
+                {`Zone: ${card.zone}`}
               </Text>
-              <Text x={CARD_WIDTH / 2} y={43} fontSize={12} textAnchor='middle' fill='#A13333'>
-                {`${card.hosts.length} configured, not reporting`}
+              <Text x={CARD_WIDTH / 2} y={43} fontSize={12} textAnchor='middle' className='monitoringGraph__subtitle'>
+                {`${card.hostCount} node${card.hostCount !== 1 ? 's' : ''}`}
               </Text>
-              {card.hosts.map(host => (
-                <Group key={host.name}>
-                  <circle cx={DOT_X} cy={host.y} r={DOT_RADIUS} fill={MISSING_COLOR} />
-                  <text x={LABEL_X} y={host.y} dominantBaseline='central' fontSize={13} fill='#7A2222'>
-                    {host.name}
-                  </text>
-                </Group>
-              ))}
+
+              {card.roles.map(roleBlock => {
+                const color = getRoleColor(roleBlock.role);
+                return (
+                  <Group key={roleBlock.role} top={roleBlock.y} left={CARD_INNER_PADDING}>
+                    <rect
+                      x={0}
+                      y={0}
+                      width={CARD_WIDTH - 2 * CARD_INNER_PADDING}
+                      height={roleBlock.height}
+                      fill={color}
+                      opacity={0.06}
+                      stroke={color}
+                      strokeOpacity={0.45}
+                      strokeWidth={1}
+                      rx={7}
+                      ry={7}
+                    />
+                    <rect x={0} y={0} width={4} height={roleBlock.height} fill={color} rx={2} />
+                    <Text x={16} y={19} fontWeight={600} fontSize={14} fill={color}>
+                      {`Role: ${roleBlock.role}`}
+                    </Text>
+                    {roleBlock.hosts.map(host => (
+                      <Group key={host.name}>
+                        <circle cx={11} cy={host.y - roleBlock.y} r={DOT_RADIUS} fill={color} />
+                        <text x={25} y={host.y - roleBlock.y} dominantBaseline='central' fontSize={13} className='monitoringGraph__label'>
+                          {host.name}
+                        </text>
+                      </Group>
+                    ))}
+                  </Group>
+                );
+              })}
             </Group>
           );
-        }
-
-        return (
-          <Group key={card.key} left={x} top={y}>
-            <rect
-              x={0}
-              y={0}
-              width={CARD_WIDTH}
-              height={card.height}
-              fill='#FFFFFF'
-              stroke='#D3DAE6'
-              strokeWidth={1}
-              rx={10}
-              ry={10}
-            />
-            <Text x={CARD_WIDTH / 2} y={26} fontWeight={700} fontSize={18} textAnchor='middle' fill='#1A1C21'>
-              {`Zone: ${card.zone}`}
-            </Text>
-            <Text x={CARD_WIDTH / 2} y={43} fontSize={12} textAnchor='middle' fill='#69707D'>
-              {`${card.hostCount} node${card.hostCount !== 1 ? 's' : ''}`}
-            </Text>
-
-            {card.roles.map(roleBlock => {
-              const color = getRoleColor(roleBlock.role);
-              return (
-                <Group key={roleBlock.role} top={roleBlock.y} left={CARD_INNER_PADDING}>
-                  <rect
-                    x={0}
-                    y={0}
-                    width={CARD_WIDTH - 2 * CARD_INNER_PADDING}
-                    height={roleBlock.height}
-                    fill={color}
-                    opacity={0.06}
-                    stroke={color}
-                    strokeOpacity={0.45}
-                    strokeWidth={1}
-                    rx={7}
-                    ry={7}
-                  />
-                  <rect x={0} y={0} width={4} height={roleBlock.height} fill={color} rx={2} />
-                  <Text x={16} y={19} fontWeight={600} fontSize={14} fill={color}>
-                    {`Role: ${roleBlock.role}`}
-                  </Text>
-                  {roleBlock.hosts.map(host => (
-                    <Group key={host.name}>
-                      <circle cx={11} cy={host.y - roleBlock.y} r={DOT_RADIUS} fill={color} />
-                      <text x={25} y={host.y - roleBlock.y} dominantBaseline='central' fontSize={13} fill='#25272E'>
-                        {host.name}
-                      </text>
-                    </Group>
-                  ))}
-                </Group>
-              );
-            })}
-          </Group>
-        );
-      })}
-    </svg>
+        })}
+      </svg>
+    </>
   );
 };
