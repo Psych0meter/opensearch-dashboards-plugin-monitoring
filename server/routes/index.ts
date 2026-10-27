@@ -10,6 +10,39 @@ import { formatClusterStats } from './utils/formatClusterStats';
 import { sanitizeError } from './errors';
 import { PLUGIN_ID } from '../../common';
 
+/**
+ * Fields of /_nodes/stats actually used by formatNodeStats. Requesting only
+ * these keeps the per-refresh payload small on large clusters (the full
+ * fs/os/jvm stats include per-device, per-pool and GC details per node).
+ */
+const NODE_STATS_FILTER = [
+  'name',
+  'host',
+  'ip',
+  'transport_address',
+  'roles',
+  'attributes.zone',
+  'os.cpu.percent',
+  'os.mem.total_in_bytes',
+  'os.mem.used_in_bytes',
+  'os.swap.total_in_bytes',
+  'os.swap.used_in_bytes',
+  'fs.total.total_in_bytes',
+  'fs.total.free_in_bytes',
+  'jvm.uptime_in_millis',
+  'jvm.mem.heap_used_in_bytes',
+  'jvm.mem.heap_max_in_bytes',
+]
+  .map((field) => `nodes.*.${field}`)
+  .join(',');
+
+/**
+ * Fields of the Nodes Info API (http metric only) merged into node stats.
+ */
+const NODE_INFO_FILTER = ['name', 'version', 'host', 'ip', 'transport_address', 'http.publish_address']
+  .map((field) => `nodes.*.${field}`)
+  .join(',');
+
 interface RouteSpec {
   /** Path below `/api/<plugin id>`. */
   path: string;
@@ -73,10 +106,12 @@ export function defineRoutes(router: IRouter, logger: Logger) {
         client.transport.request({
           method: 'GET',
           path: '/_nodes/stats/fs,os,jvm',
+          querystring: { filter_path: NODE_STATS_FILTER },
         }),
         client.transport.request({
           method: 'GET',
-          path: '/_nodes?filter_path=nodes.*.name,nodes.*.version',
+          path: '/_nodes/http',
+          querystring: { filter_path: NODE_INFO_FILTER },
         }),
       ]);
       return formatNodeStats(statsResult.body?.nodes, infoResult.body?.nodes);
