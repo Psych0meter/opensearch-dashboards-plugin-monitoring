@@ -1,11 +1,14 @@
 name: Build and Release Plugin
 
-# - Pull requests and manual runs without `release_tag` only build, lint,
-#   test and upload the plugin zip as a workflow artifact.
-# - A pushed tag `vX.Y.Z-osdA.B.C` (or a manual run with `release_tag`) also
-#   publishes a GitHub release. The tag must match the committed plugin
-#   version and OpenSearch Dashboards version exactly, and CHANGELOG.md must
-#   have a section for it.
+# - Pushing a tag `vX.Y.Z` publishes a release with one zip per supported
+#   OpenSearch Dashboards version (.github/supported-osd.json), named
+#   <id>-X.Y.Z-osd<A.B.C>.zip. The tag must match the plugin version in
+#   package.json and opensearch_dashboards.json, and CHANGELOG.md must have a
+#   `## [vX.Y.Z]` section.
+# - Pull requests and manual runs only build (pull requests: the version the
+#   manifest targets; manual runs: that one or the `osd_version` input).
+# - The weekly osd-compat workflow later adds zips for newer Dashboards
+#   versions to the latest release.
 
 on:
   push:
@@ -15,16 +18,9 @@ on:
   workflow_dispatch:
     inputs:
       osd_version:
-        description: 'Target OpenSearch Dashboards version (X.Y.Z). Defaults to the manifest. Build-only runs may target another version.'
+        description: 'OpenSearch Dashboards version to build (X.Y.Z). Defaults to the version in the manifest.'
         required: false
         type: string
-      release_tag:
-        description: 'Release to publish, e.g. v1.2.0-osd3.9.0. Leave empty to only build.'
-        required: false
-        type: string
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -34,193 +30,141 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
+  plan:
     runs-on: ubuntu-latest
     outputs:
-      osd_version: ${{ steps.versions.outputs.osd_version }}
-      release_tag: ${{ steps.versions.outputs.release_tag }}
-      artifact_name: ${{ steps.versions.outputs.artifact_name }}
+      versions: ${{ steps.plan.outputs.versions }}
+      primary_osd: ${{ steps.plan.outputs.primary_osd }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
 
     steps:
-      - name: Checkout Plugin
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          path: monitoring-plugin
+
+      - name: Test release scripts
+        run: .github/scripts/test.sh
 
       # Inputs and refs are read from environment variables, never
       # interpolated into the script, and validated before use.
-      - name: Resolve and validate versions
-        id: versions
-        working-directory: monitoring-plugin
+      - name: Plan builds
+        id: plan
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
           INPUT_OSD_VERSION: ${{ inputs.osd_version }}
-          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
 
           SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
-          TAG_RE='^v([0-9]+\.[0-9]+\.[0-9]+)-osd([0-9]+\.[0-9]+\.[0-9]+)$'
+          TAG_RE='^v([0-9]+\.[0-9]+\.[0-9]+)$'
 
           MANIFEST_OSD=$(jq -r '.opensearchDashboardsVersion' opensearch_dashboards.json)
           MANIFEST_VERSION=$(jq -r '.version' opensearch_dashboards.json)
           PACKAGE_VERSION=$(jq -r '.version' package.json)
 
-          [[ "$MANIFEST_OSD" =~ $SEMVER_RE ]] || fail "opensearch_dashboards.json opensearchDashboardsVersion '$MANIFEST_OSD' is not X.Y.Z"
-          [[ "$MANIFEST_VERSION" =~ $SEMVER_RE ]] || fail "opensearch_dashboards.json version '$MANIFEST_VERSION' is not X.Y.Z"
+          [[ "$MANIFEST_OSD" =~ $SEMVER_RE ]] || fail "opensearchDashboardsVersion '$MANIFEST_OSD' is not X.Y.Z"
+          [[ "$MANIFEST_VERSION" =~ $SEMVER_RE ]] || fail "manifest version '$MANIFEST_VERSION' is not X.Y.Z"
           [ "$MANIFEST_VERSION" = "$PACKAGE_VERSION" ] || fail "opensearch_dashboards.json version ($MANIFEST_VERSION) and package.json version ($PACKAGE_VERSION) differ"
 
           RELEASE_TAG=""
           if [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
+            [[ "$REF_NAME" =~ $TAG_RE ]] || fail "release tag '$REF_NAME' must look like v1.2.0 (the Dashboards version is no longer part of the tag)"
+            [ "${BASH_REMATCH[1]}" = "$MANIFEST_VERSION" ] || fail "tag version ${BASH_REMATCH[1]} does not match plugin version $MANIFEST_VERSION"
+            grep -qF "## [$REF_NAME]" CHANGELOG.md || fail "CHANGELOG.md has no '## [$REF_NAME]' section"
             RELEASE_TAG="$REF_NAME"
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            RELEASE_TAG="$INPUT_RELEASE_TAG"
-          fi
 
-          if [ -n "$RELEASE_TAG" ]; then
-            [[ "$RELEASE_TAG" =~ $TAG_RE ]] || fail "release tag '$RELEASE_TAG' must look like v1.2.0-osd3.9.0"
-            TAG_VERSION="${BASH_REMATCH[1]}"
-            TAG_OSD="${BASH_REMATCH[2]}"
-            [ "$TAG_VERSION" = "$MANIFEST_VERSION" ] || fail "tag plugin version $TAG_VERSION does not match manifest version $MANIFEST_VERSION"
-            [ "$TAG_OSD" = "$MANIFEST_OSD" ] || fail "tag targets OpenSearch Dashboards $TAG_OSD but the manifest declares $MANIFEST_OSD"
-            if [ -n "$INPUT_OSD_VERSION" ] && [ "$INPUT_OSD_VERSION" != "$TAG_OSD" ]; then
-              fail "osd_version input ($INPUT_OSD_VERSION) contradicts release tag $RELEASE_TAG"
-            fi
-            grep -qF "## [$RELEASE_TAG]" CHANGELOG.md || fail "CHANGELOG.md has no '## [$RELEASE_TAG]' section"
-            OSD_VERSION="$TAG_OSD"
+            VERSIONS=$(.github/scripts/supported-osd-versions.sh)
+            jq -e --arg v "$MANIFEST_OSD" 'index($v) != null' <<< "$VERSIONS" > /dev/null \
+              || fail "the manifest targets Dashboards $MANIFEST_OSD, which is not in the supported list $VERSIONS"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$INPUT_OSD_VERSION" ]; then
+            [[ "$INPUT_OSD_VERSION" =~ $SEMVER_RE ]] || fail "osd_version '$INPUT_OSD_VERSION' is not X.Y.Z"
+            VERSIONS=$(jq -nc --arg v "$INPUT_OSD_VERSION" '[$v]')
           else
-            OSD_VERSION="${INPUT_OSD_VERSION:-$MANIFEST_OSD}"
+            VERSIONS=$(jq -nc --arg v "$MANIFEST_OSD" '[$v]')
           fi
-
-          [[ "$OSD_VERSION" =~ $SEMVER_RE ]] || fail "OpenSearch Dashboards version '$OSD_VERSION' is not X.Y.Z"
 
           {
-            echo "osd_version=$OSD_VERSION"
+            echo "versions=$VERSIONS"
+            echo "primary_osd=$MANIFEST_OSD"
             echo "release_tag=$RELEASE_TAG"
-            echo "artifact_name=monitoringPlugin-$MANIFEST_VERSION-osd$OSD_VERSION"
-            echo "manifest_osd=$MANIFEST_OSD"
           } >> "$GITHUB_OUTPUT"
+          echo "Building for Dashboards: $VERSIONS (release tag: '${RELEASE_TAG:-none}')"
 
-      # Build-only runs may target another Dashboards version: rewrite the
-      # manifest in the workspace (not committed) so the packaged plugin
-      # declares exactly the version it was built against. Releases never
-      # get here because the tag must match the committed manifest.
-      - name: Align manifest with build target
-        if: steps.versions.outputs.osd_version != steps.versions.outputs.manifest_osd
-        working-directory: monitoring-plugin
-        env:
-          OSD_VERSION: ${{ steps.versions.outputs.osd_version }}
-        run: |
-          set -euo pipefail
-          echo "::warning::Building for OpenSearch Dashboards $OSD_VERSION; the committed manifest targets another version."
-          jq --arg v "$OSD_VERSION" '.opensearchDashboardsVersion = $v' opensearch_dashboards.json > manifest.tmp
-          mv manifest.tmp opensearch_dashboards.json
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        osd_version: ${{ fromJSON(needs.plan.outputs.versions) }}
+    uses: ./.github/workflows/build-plugin.yml
+    with:
+      osd_version: ${{ matrix.osd_version }}
 
-      # Shallow clone OSD (depth 1) is MUCH faster than a full clone
-      - name: Checkout OpenSearch Dashboards (Shallow)
+  release:
+    needs: [plan, build]
+    # Publish whatever built successfully: a Dashboards version that does not
+    # compile must not block the others. The version the manifest targets is
+    # required.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.release_tag != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-assets
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          repository: opensearch-project/OpenSearch-Dashboards
-          ref: ${{ steps.versions.outputs.osd_version }}
-          path: OpenSearch-Dashboards
-          fetch-depth: 1
+          pattern: plugin-*
+          merge-multiple: true
+          path: dist
 
-      - name: Move Plugin to OSD
-        run: |
-          mkdir -p OpenSearch-Dashboards/plugins
-          mv monitoring-plugin OpenSearch-Dashboards/plugins/monitoring
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: 'OpenSearch-Dashboards/.node-version'
-
-      # Scoped Bootstrap: Only installs what is needed for your plugin
-      - name: Scoped Bootstrap
-        working-directory: OpenSearch-Dashboards
+      - name: Check build results
         env:
-          CHROMEDRIVER_SKIP_DOWNLOAD: 'true'
-          CYPRESS_INSTALL_BINARY: '0'
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
-        run: yarn osd bootstrap --scope monitoring
-
-      - name: Lint
-        working-directory: OpenSearch-Dashboards/plugins/monitoring
-        run: yarn lint
-
-      - name: Unit tests
-        working-directory: OpenSearch-Dashboards/plugins/monitoring
-        run: yarn test
-
-      - name: Build Plugin
-        working-directory: OpenSearch-Dashboards/plugins/monitoring
-        run: yarn plugin-helpers build
-
-      - name: Verify packaged manifest
-        working-directory: OpenSearch-Dashboards/plugins/monitoring
-        env:
-          OSD_VERSION: ${{ steps.versions.outputs.osd_version }}
+          VERSIONS: ${{ needs.plan.outputs.versions }}
+          PRIMARY_OSD: ${{ needs.plan.outputs.primary_osd }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          ZIPS=(build/*.zip)
-          [ "${#ZIPS[@]}" -eq 1 ] || { echo "::error::expected exactly one zip in build/, found ${#ZIPS[@]}"; exit 1; }
-          PACKAGED_OSD=$(unzip -p "${ZIPS[0]}" '*/opensearch_dashboards.json' | jq -r '.opensearchDashboardsVersion')
-          if [ "$PACKAGED_OSD" != "$OSD_VERSION" ]; then
-            echo "::error::packaged plugin declares OpenSearch Dashboards $PACKAGED_OSD, expected $OSD_VERSION"
-            exit 1
-          fi
-          echo "Packaged ${ZIPS[0]} for OpenSearch Dashboards $PACKAGED_OSD"
+          ID=$(jq -r '.id' opensearch_dashboards.json)
+          PV=$(jq -r '.version' opensearch_dashboards.json)
 
-      - name: Extract Release Notes
-        if: steps.versions.outputs.release_tag != ''
-        working-directory: OpenSearch-Dashboards/plugins/monitoring
+          [ -f "dist/$ID-$PV-osd$PRIMARY_OSD.zip" ] || { echo "::error::no build for Dashboards $PRIMARY_OSD, the version the manifest targets"; exit 1; }
+
+          for v in $(jq -r '.[]' <<< "$VERSIONS"); do
+            [ -f "dist/$ID-$PV-osd$v.zip" ] || echo "::warning::no build for Dashboards $v; it is not attached to the release (the weekly osd-compat workflow retries it)"
+          done
+          ls -l dist
+
+      - name: Extract release notes
         env:
-          TAG: ${{ steps.versions.outputs.release_tag }}
+          TAG: ${{ needs.plan.outputs.release_tag }}
         run: |
           set -euo pipefail
+          ID=$(jq -r '.id' opensearch_dashboards.json)
+          PV=$(jq -r '.version' opensearch_dashboards.json)
           awk -v tag="$TAG" '
             index($0, "## [" tag "]") == 1 { found=1; next }
             found && (/^## \[/ || /^\[/) { exit }
             found { print }
-          ' CHANGELOG.md > build/release_notes.md
-          if [ ! -s build/release_notes.md ]; then
-            echo "::error::CHANGELOG.md section for $TAG is empty"
-            exit 1
-          fi
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.versions.outputs.artifact_name }}
-          path: |
-            OpenSearch-Dashboards/plugins/monitoring/build/*.zip
-            OpenSearch-Dashboards/plugins/monitoring/build/release_notes.md
-          if-no-files-found: error
-
-  release:
-    needs: build
-    if: needs.build.outputs.release_tag != ''
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build.outputs.artifact_name }}
-          path: dist
+          ' CHANGELOG.md > changelog_section.md
+          [ -s changelog_section.md ] || { echo "::error::CHANGELOG.md section for $TAG is empty"; exit 1; }
+          ASSETS=$(ls dist) PLUGIN_ID="$ID" PLUGIN_VERSION="$PV" \
+            .github/scripts/render-compat-notes.sh < changelog_section.md > release_notes.md
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.release_tag }}
+          tag_name: ${{ needs.plan.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           files: dist/*.zip
-          body_path: dist/release_notes.md
+          body_path: release_notes.md
           generate_release_notes: true
           fail_on_unmatched_files: true

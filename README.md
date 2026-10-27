@@ -189,13 +189,28 @@ yarn test   # Jest unit tests (formatters, error mapping, node matching, auto-re
 
 ## Releasing
 
-Releases are built and published by `.github/workflows/release.yml`:
+A plugin release holds one zip per supported OpenSearch Dashboards version, named `monitoringPlugin-<plugin version>-osd<Dashboards version>.zip`. The supported range is set in `.github/supported-osd.json` (minimum version and major; every stable release from the minimum on is built).
 
-1. Update `version` in both `package.json` and `opensearch_dashboards.json`, and set `opensearchDashboardsVersion` to the exact OpenSearch Dashboards version you target.
-2. Move the `[Unreleased]` entries of `CHANGELOG.md` into a section named after the tag, e.g. `## [v1.2.0-osd3.9.0] - YYYY-MM-DD`, and update the links at the bottom.
-3. Push the tag `vX.Y.Z-osdA.B.C`. The workflow fails if the tag doesn't match both manifest versions, or if the CHANGELOG has no section for it; otherwise it lints, tests, builds, checks the packaged manifest and publishes the zip with that CHANGELOG section as release notes.
+1. Update `version` in both `package.json` and `opensearch_dashboards.json`. `opensearchDashboardsVersion` in the manifest is the version the plugin is developed against; it must be in the supported range, and each zip is built with its own version written into the packaged manifest.
+2. Move the `[Unreleased]` entries of `CHANGELOG.md` into a section named after the tag, e.g. `## [v1.3.0] - YYYY-MM-DD`, and update the links at the bottom.
+3. Push the tag `vX.Y.Z`. `.github/workflows/release.yml` fails if the tag doesn't match both manifest versions or the CHANGELOG has no section for it; otherwise it builds, lints, type-checks and tests the plugin against every supported Dashboards version and publishes the zips with the CHANGELOG section as release notes. A Dashboards version that fails to build is left out (the build of the manifest's own version is required).
 
-A manual run (`workflow_dispatch`) without `release_tag` only builds, and can target another Dashboards version through `osd_version` for testing; the zip is uploaded as a workflow artifact.
+Pull requests only build the manifest's version. A manual run (`workflow_dispatch`) can build any single version through `osd_version`; nothing is published.
+
+### New Dashboards versions
+
+`.github/workflows/osd-compat.yml` runs every Monday. It looks for supported Dashboards versions the latest release has no zip for, builds the plugin at the release tag against each, attaches the zips to that release and updates its list of compatible versions. The plugin version does not change. A version that fails to build gets a GitHub issue (opened once) and is retried every week; fixing it normally means a new plugin release. Run the workflow manually with `osd_version` to rebuild one version and replace its zip.
+
+Things to know:
+
+- The zips are built, linted, type-checked and unit-tested against their Dashboards version, but not run inside Dashboards.
+- GitHub disables scheduled workflows after 60 days without repository activity; re-enable it from the Actions tab.
+- The workflow adds files to an existing release, so don't enable GitHub's "immutable releases" for this repository.
+- Releases up to `v1.2.0-osd3.9.0` use the old naming (`monitoringPlugin-3.9.0.zip`); the workflow recognises it.
+
+### Choosing the zip
+
+Download the zip whose `osd<version>` matches your Dashboards exactly. Dashboards only warns on a version mismatch when loading a plugin, but an API difference between versions can still break it at runtime.
 
 ---
 

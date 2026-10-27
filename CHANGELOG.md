@@ -4,10 +4,20 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH-osdX.Y.Z`, where
-the `-osd` suffix is the exact OpenSearch Dashboards version the build targets.
+for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH`; up to
+`v1.2.0-osd3.9.0` the tag also carried the OpenSearch Dashboards version.
 
 ## [Unreleased]
+
+### Added
+
+- A release now holds one zip per supported OpenSearch Dashboards version, named `monitoringPlugin-<plugin version>-osd<Dashboards version>.zip`. The supported range is configured in `.github/supported-osd.json` (OpenSearch Dashboards 3.8.0 and later 3.x).
+- Weekly `osd-compat` workflow that builds the latest release against newly published Dashboards versions and attaches the zips to it, listing the compatible versions in the release notes. A version that fails to build gets a GitHub issue.
+- Type-checking against each Dashboards version's own typings in CI.
+
+### Changed
+
+- Release tags are `vMAJOR.MINOR.PATCH`; the Dashboards version is no longer part of the tag. The release workflow builds every supported Dashboards version instead of a single one, and `release_tag` input was dropped in favour of pushing the tag.
 
 ## [v1.2.0-osd3.9.0] - 2026-10-27
 
