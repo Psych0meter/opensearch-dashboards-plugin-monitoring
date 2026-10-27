@@ -447,7 +447,7 @@ export const MonitoringApp = ({
     } catch (err) {
       notifications.toasts.addDanger({
         title: 'Failed to fetch snapshots',
-        text: err?.body?.message || err.message || 'An unexpected error occurred',
+        text: err?.body?.message || 'An unexpected error occurred',
       });
       setSnapshotsData([]);
     } finally {

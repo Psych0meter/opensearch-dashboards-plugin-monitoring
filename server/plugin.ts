@@ -36,7 +36,7 @@ export class MonitoringPlugin implements Plugin<MonitoringPluginSetup, Monitorin
       }
     });
 
-    defineRoutes(router);
+    defineRoutes(router, this.logger);
 
     return {};
   }
