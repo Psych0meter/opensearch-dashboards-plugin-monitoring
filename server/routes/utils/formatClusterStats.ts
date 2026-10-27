@@ -28,7 +28,7 @@ export function formatClusterStats(rawData: RawClusterStats | null | undefined):
     cluster_name: toNullableString(rawData?.cluster_name),
     status: toNullableString(rawData?.status),
     version: formatVersions(nodes?.versions),
-    uptime: toNullableNumber(nodes?.jvm?.max_uptime_in_millis),
+    longest_node_uptime: toNullableNumber(nodes?.jvm?.max_uptime_in_millis),
 
     nodes: {
       total: toNumber(count.total),

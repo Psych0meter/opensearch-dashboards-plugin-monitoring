@@ -64,7 +64,12 @@ export interface ClusterStatsSummary {
    * the cluster is running mixed versions (e.g. mid-upgrade).
    */
   version: string | string[] | null;
-  uptime: number | null;
+  /**
+   * Uptime of the longest-running node JVM (`nodes.jvm.max_uptime_in_millis`).
+   * This is NOT a cluster-wide uptime: it survives rolling restarts as long as
+   * one node stays up.
+   */
+  longest_node_uptime: number | null;
   nodes: {
     total: number;
     cluster_manager: number;

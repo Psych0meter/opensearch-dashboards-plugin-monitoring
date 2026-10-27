@@ -293,6 +293,12 @@ export const MonitoringApp = ({
     if ((remainingMillis > 0 || parts.length === 0) && minIndex >= 4)
       parts.push(`${remainingMillis} millisecond${remainingMillis !== 1 ? 's' : ''}`);
 
+    if (parts.length === 0) {
+      const unitNames: Record<TimeUnit, string> = {
+        d: 'day', h: 'hour', m: 'minute', s: 'second', ms: 'millisecond',
+      };
+      return `< 1 ${unitNames[smallestUnit]}`;
+    }
     return parts.join(' ');
   };
 
@@ -505,6 +511,24 @@ export const MonitoringApp = ({
       .map(version => ({ version, nodes: map[version].sort() }));
   }, [nodesData]);
 
+  /**
+   * Shortest and longest JVM uptime across reporting nodes. The shortest one
+   * is the most actionable (it reveals a recent restart), the longest one is
+   * what OpenSearch exposes as `max_uptime_in_millis`.
+   */
+  const uptimeRange = useMemo(() => {
+    const withUptime = nodesData.filter(
+      (node): node is ClusterNode & { uptime: number } => node.uptime != null
+    );
+    if (withUptime.length === 0) return null;
+    const sorted = [...withUptime].sort((a, b) => a.uptime - b.uptime);
+    return {
+      shortest: sorted[0],
+      longest: sorted[sorted.length - 1],
+      count: sorted.length,
+    };
+  }, [nodesData]);
+
   // Effect for auto-refreshing data
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
@@ -565,6 +589,12 @@ export const MonitoringApp = ({
       name: 'Zone',
       sortable: true,
       render: (zone: string | null) => zone ?? '-',
+    },
+    {
+      field: 'uptime',
+      name: 'Uptime',
+      sortable: true,
+      render: (uptime: number | null) => (uptime != null ? formatDuration(uptime, 'm') : '-'),
     },
     {
       field: 'cpu',
@@ -873,15 +903,45 @@ export const MonitoringApp = ({
               </EuiFlexItem>
               <EuiFlexItem grow={false}>
                 <EuiStat
-                  title={clusterStats?.uptime != null ? formatDuration(clusterStats.uptime, 'm') : '--'}
-                  description={
-                    <span>
-                      <EuiIcon type='clock' /> Uptime
-                    </span>
+                  title={
+                    uptimeRange ? (
+                      <div>
+                        <span>{formatDuration(uptimeRange.shortest.uptime, 'm')}</span>
+                        {uptimeRange.count > 1 && (
+                          <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
+                            {`longest: ${formatDuration(uptimeRange.longest.uptime, 'm')}`}
+                          </div>
+                        )}
+                      </div>
+                    ) : clusterStats?.longest_node_uptime != null ? (
+                      <div>
+                        <span>{formatDuration(clusterStats.longest_node_uptime, 'm')}</span>
+                        <div style={{ fontSize: '0.5em', color: SUBDUED_TEXT_COLOR }}>
+                          longest node
+                        </div>
+                      </div>
+                    ) : '--'
                   }
-                  
+                  description={
+                    <EuiToolTip
+                      position='bottom'
+                      content={
+                        uptimeRange
+                          ? `Shortest JVM uptime: ${uptimeRange.shortest.name}. ` +
+                            `Longest: ${uptimeRange.longest.name}. ` +
+                            'A recent value here means a node restarted recently; ' +
+                            'there is no single cluster-wide uptime.'
+                          : 'JVM uptime of the longest-running node. There is no single cluster-wide uptime.'
+                      }
+                    >
+                      <span>
+                        <EuiIcon type='clock' /> Node Uptime <EuiIcon type='iInCircle' size='s' />
+                      </span>
+                    </EuiToolTip>
+                  }
                   textAlign='left'
-                  isLoading={clusterStatsLoading}
+                  titleElement='div'
+                  isLoading={clusterStatsLoading && !uptimeRange}
                 />
               </EuiFlexItem>
               <EuiFlexItem grow={false}>
