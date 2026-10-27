@@ -1,0 +1,161 @@
+name: Build plugin for one Dashboards version
+
+# Reusable workflow: lint, type-check, test and package the plugin against one
+# exact OpenSearch Dashboards version, and upload the zip as a workflow
+# artifact named `plugin-<osd_version>`.
+#
+# The zip is named <id>-<plugin version>-osd<osd version>.zip and its manifest
+# declares exactly <osd version>, whatever the committed manifest says.
+
+on:
+  workflow_call:
+    inputs:
+      osd_version:
+        description: 'OpenSearch Dashboards version to build against (X.Y.Z)'
+        required: true
+        type: string
+      ref:
+        description: 'Plugin source ref (tag, branch or SHA). Defaults to the ref of the calling workflow.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Dashboards ${{ inputs.osd_version }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Plugin
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          path: monitoring-plugin
+
+      # Inputs are read through environment variables, never interpolated
+      # into scripts, and validated before use.
+      - name: Resolve versions and align manifest
+        id: versions
+        working-directory: monitoring-plugin
+        env:
+          OSD_VERSION: ${{ inputs.osd_version }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
+
+          [[ "$OSD_VERSION" =~ $SEMVER_RE ]] || fail "OpenSearch Dashboards version '$OSD_VERSION' is not X.Y.Z"
+
+          PLUGIN_ID=$(jq -r '.id' opensearch_dashboards.json)
+          PLUGIN_VERSION=$(jq -r '.version' opensearch_dashboards.json)
+          PACKAGE_VERSION=$(jq -r '.version' package.json)
+          [[ "$PLUGIN_VERSION" =~ $SEMVER_RE ]] || fail "manifest version '$PLUGIN_VERSION' is not X.Y.Z"
+          [ "$PLUGIN_VERSION" = "$PACKAGE_VERSION" ] || fail "manifest version ($PLUGIN_VERSION) and package.json version ($PACKAGE_VERSION) differ"
+
+          # The committed manifest names the version the plugin is developed
+          # against; every build declares the version it is built for.
+          jq --arg v "$OSD_VERSION" '.opensearchDashboardsVersion = $v' opensearch_dashboards.json > manifest.tmp
+          mv manifest.tmp opensearch_dashboards.json
+
+          {
+            echo "plugin_id=$PLUGIN_ID"
+            echo "plugin_version=$PLUGIN_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      # Shallow clone OSD (depth 1) is MUCH faster than a full clone
+      - name: Checkout OpenSearch Dashboards (Shallow)
+        uses: actions/checkout@v4
+        with:
+          repository: opensearch-project/OpenSearch-Dashboards
+          ref: ${{ inputs.osd_version }}
+          path: OpenSearch-Dashboards
+          fetch-depth: 1
+
+      - name: Move Plugin to OSD
+        run: |
+          mkdir -p OpenSearch-Dashboards/plugins
+          mv monitoring-plugin OpenSearch-Dashboards/plugins/monitoring
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: 'OpenSearch-Dashboards/.node-version'
+
+      # Scoped Bootstrap: Only installs what is needed for the plugin
+      - name: Scoped Bootstrap
+        working-directory: OpenSearch-Dashboards
+        env:
+          CHROMEDRIVER_SKIP_DOWNLOAD: 'true'
+          CYPRESS_INSTALL_BINARY: '0'
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+        run: yarn osd bootstrap --scope monitoring
+
+      - name: Lint
+        working-directory: OpenSearch-Dashboards/plugins/monitoring
+        run: yarn lint
+
+      # Type-checks the plugin against this Dashboards version's own typings,
+      # which is what reveals API changes between versions. Only diagnostics in
+      # the plugin's own files count: Dashboards' sources produce errors of
+      # their own when checked this way, and TS6059 (rootDir) is expected noise
+      # from checking a plugin outside OSD's project setup.
+      - name: Type check
+        working-directory: OpenSearch-Dashboards
+        run: |
+          set +e
+          output=$(node_modules/.bin/tsc -p plugins/monitoring/tsconfig.json --noEmit 2>&1)
+          set -e
+          errors=$(printf '%s\n' "$output" | grep -E '^plugins/monitoring/.*error TS' | grep -v 'error TS6059' || true)
+          if [ -n "$errors" ]; then
+            printf '%s\n' "$errors"
+            exit 1
+          fi
+          if [ -z "$(printf '%s\n' "$output" | grep -E 'error TS')" ] && [ -n "$output" ]; then
+            echo "::error::tsc produced unexpected output"
+            printf '%s\n' "$output"
+            exit 1
+          fi
+
+      - name: Unit tests
+        working-directory: OpenSearch-Dashboards/plugins/monitoring
+        run: yarn test
+
+      - name: Build Plugin
+        working-directory: OpenSearch-Dashboards/plugins/monitoring
+        run: yarn plugin-helpers build
+
+      - name: Verify and name the package
+        working-directory: OpenSearch-Dashboards/plugins/monitoring
+        env:
+          OSD_VERSION: ${{ inputs.osd_version }}
+          PLUGIN_ID: ${{ steps.versions.outputs.plugin_id }}
+          PLUGIN_VERSION: ${{ steps.versions.outputs.plugin_version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          ZIPS=(build/*.zip)
+          [ "${#ZIPS[@]}" -eq 1 ] || { echo "::error::expected exactly one zip in build/, found ${#ZIPS[@]}"; exit 1; }
+
+          PACKAGED=$(unzip -p "${ZIPS[0]}" '*/opensearch_dashboards.json')
+          PACKAGED_OSD=$(jq -r '.opensearchDashboardsVersion' <<< "$PACKAGED")
+          PACKAGED_VERSION=$(jq -r '.version' <<< "$PACKAGED")
+          [ "$PACKAGED_OSD" = "$OSD_VERSION" ] || { echo "::error::packaged plugin declares OpenSearch Dashboards $PACKAGED_OSD, expected $OSD_VERSION"; exit 1; }
+          [ "$PACKAGED_VERSION" = "$PLUGIN_VERSION" ] || { echo "::error::packaged plugin version is $PACKAGED_VERSION, expected $PLUGIN_VERSION"; exit 1; }
+
+          mkdir -p ../../plugin-dist
+          NAME="$PLUGIN_ID-$PLUGIN_VERSION-osd$OSD_VERSION.zip"
+          mv "${ZIPS[0]}" "../../plugin-dist/$NAME"
+          echo "Packaged $NAME"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-${{ inputs.osd_version }}
+          path: OpenSearch-Dashboards/plugin-dist/*.zip
+          if-no-files-found: error
