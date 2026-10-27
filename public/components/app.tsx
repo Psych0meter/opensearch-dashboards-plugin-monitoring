@@ -1336,7 +1336,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.unassigned_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
+                  titleColor={(clusterHealth?.unassigned_shards ?? 0) > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1351,7 +1351,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.initializing_shards > 0 ? STATUS_DANGER : STATUS_GOOD}
+                  titleColor={(clusterHealth?.initializing_shards ?? 0) > 0 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
@@ -1366,7 +1366,7 @@ export const MonitoringApp = ({
                     </span>
                   }
                   
-                  titleColor={clusterHealth?.active_shards_percent_as_number < 100 ? STATUS_DANGER : STATUS_GOOD}
+                  titleColor={(clusterHealth?.active_shards_percent_as_number ?? 100) < 100 ? STATUS_DANGER : STATUS_GOOD}
                   textAlign='left'
                   isLoading={clusterHealthLoading}
                 />
