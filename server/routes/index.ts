@@ -9,6 +9,7 @@ import { formatRecoveryStats } from './utils/formatRecoveryStats';
 import { formatClusterStats } from './utils/formatClusterStats';
 import { sanitizeError } from './errors';
 import { PLUGIN_ID } from '../../common';
+import { schema, Type } from '@osd/config-schema';
 
 /**
  * Fields of /_nodes/stats actually used by formatNodeStats. Requesting only
@@ -50,6 +51,8 @@ interface RouteSpec {
   resource: string;
   /** OpenSearch privilege(s) the route needs, surfaced on 403. */
   privilege: string;
+  /** Optional query-string schema; requests not matching it get a 400. */
+  query?: Type<Record<string, unknown>>;
   handler: (
     context: RequestHandlerContext,
     request: OpenSearchDashboardsRequest
@@ -67,7 +70,9 @@ interface RouteSpec {
 function createRoute(router: IRouter, logger: Logger, spec: RouteSpec) {
   const fullPath = `/api/${PLUGIN_ID}${spec.path}`;
 
-  router.get({ path: fullPath, validate: false }, async (context, request, response) => {
+  const validate = spec.query ? { query: spec.query } : false;
+
+  router.get({ path: fullPath, validate }, async (context, request, response) => {
     try {
       const body = await spec.handler(context, request);
       return response.ok({ body: body as Record<string, unknown> });
@@ -147,14 +152,32 @@ export function defineRoutes(router: IRouter, logger: Logger) {
   });
 
   // Recovery
+  //
+  // By default only ongoing recoveries are requested (`active_only`), so the
+  // cluster doesn't serialize every completed recovery on each refresh. The
+  // UI asks for completed ones explicitly with `include_completed=true`.
+  //
+  // `detailed` is not requested: it only adds the per-file breakdown, which
+  // the UI never displays; the aggregate file/byte/translog progress used by
+  // formatRecoveryStats is part of the default response.
+  //
+  // Note that completed entries are not a history: OpenSearch only reports
+  // the latest recovery of each shard copy that still exists.
   createRoute(router, logger, {
     path: '/recovery',
     resource: 'shard recoveries',
     privilege: 'indices:monitor/recovery',
-    handler: async (context) => {
+    query: schema.object({
+      include_completed: schema.boolean({ defaultValue: false }),
+    }),
+    handler: async (context, request) => {
+      const { include_completed: includeCompleted } = request.query as {
+        include_completed: boolean;
+      };
       const result = await context.core.opensearch.client.asCurrentUser.transport.request({
         method: 'GET',
-        path: '/_recovery?detailed',
+        path: '/_recovery',
+        querystring: includeCompleted ? {} : { active_only: true },
       });
       return formatRecoveryStats(result.body);
     },

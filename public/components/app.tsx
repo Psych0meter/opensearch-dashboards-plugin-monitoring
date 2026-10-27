@@ -200,7 +200,6 @@ export const MonitoringApp = ({
   const [snapshotsLoading, setSnapshotsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hideDone, setHideDone] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('-stage:DONE');
   const [autoRefresh, setAutoRefresh] = useState(
     getLocalStorageItem(`${PLUGIN_ID}.autoRefresh`, false)
   );
@@ -403,7 +402,9 @@ export const MonitoringApp = ({
   const fetchRecovery = useCallback(async () => {
     try {
       setLoading(true);
-      const recovData = await http.get(`/api/${PLUGIN_ID}/recovery`);
+      const recovData = await http.get(`/api/${PLUGIN_ID}/recovery`, {
+        query: { include_completed: !hideDone },
+      });
       setRecoveryData(recovData);
     } catch (err) {
       notifications.toasts.addDanger({
@@ -413,7 +414,7 @@ export const MonitoringApp = ({
     } finally {
       setLoading(false);
     }
-  }, [http, notifications]);
+  }, [http, notifications, hideDone]);
 
   const fetchClusterStats = useCallback(async () => {
     try {
@@ -456,13 +457,10 @@ export const MonitoringApp = ({
   }, [http, notifications]);
 
   /**
-   * Toggles the display of completed recovery items
+   * Toggles the display of completed recovery items. Completed recoveries
+   * are only requested from OpenSearch while this is off.
    */
-  const toggleHideDone = () => {
-    const newHideDone = !hideDone;
-    setHideDone(newHideDone);
-    setSearchQuery(newHideDone ? '-stage:DONE' : '');
-  };
+  const toggleHideDone = () => setHideDone(!hideDone);
 
   /**
    * Compares configured nodes with actual nodes to find differences
@@ -1560,13 +1558,11 @@ export const MonitoringApp = ({
                       },
                     }}
                     search={{
-                      query: searchQuery,
-                      onChange: ({ query }) => setSearchQuery(query ? query.text : ''),
                       box: {
                         incremental: true,
                         placeholder: hideDone
-                          ? 'Search (excluding completed items)'
-                          : 'Search all items',
+                          ? 'Search ongoing recoveries'
+                          : 'Search ongoing and completed recoveries',
                       },
                     }}
                   />
