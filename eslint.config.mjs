@@ -40,6 +40,27 @@ export default [
     },
   },
   {
+    files: ['**/*.test.ts'],
+    languageOptions: {
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        jest: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        setImmediate: 'readonly',
+      },
+    },
+  },
+  {
+    files: ['test/**/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { module: 'writable', require: 'readonly' },
+    },
+  },
+  {
     ignores: ['node_modules/', 'build/', 'dist/', 'target/'],
   },
 ];

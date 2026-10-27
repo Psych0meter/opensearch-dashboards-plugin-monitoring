@@ -6,7 +6,8 @@
     "build": "node ../../scripts/plugin_helpers build",
     "plugin-helpers": "node ../../scripts/plugin_helpers",
     "osd": "node ../../scripts/osd",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "../../node_modules/.bin/jest --config ./test/jest.config.js"
   },
   "dependencies": {
     "@visx/group": "^3.12.0",
