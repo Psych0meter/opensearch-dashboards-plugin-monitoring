@@ -9,6 +9,8 @@ for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH`; up to
 
 ## [Unreleased]
 
+## [v1.2.0] - 2026-10-28
+
 ### Added
 
 - A release now holds one zip per supported OpenSearch Dashboards version, named `monitoringPlugin-<plugin version>-osd<Dashboards version>.zip`. The supported range is configured in `.github/supported-osd.json` (OpenSearch Dashboards 3.8.0 and later 3.x).
