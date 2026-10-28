@@ -9,19 +9,7 @@ for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH`; up to
 
 ## [Unreleased]
 
-## [v1.2.0] - 2026-10-28
-
-### Added
-
-- A release now holds one zip per supported OpenSearch Dashboards version, named `monitoringPlugin-<plugin version>-osd<Dashboards version>.zip`. The supported range is configured in `.github/supported-osd.json` (OpenSearch Dashboards 3.8.0 and later 3.x).
-- Weekly `osd-compat` workflow that builds the latest release against newly published Dashboards versions and attaches the zips to it, listing the compatible versions in the release notes. A version that fails to build gets a GitHub issue.
-- Type-checking against each Dashboards version's own typings in CI.
-
-### Changed
-
-- Release tags are `vMAJOR.MINOR.PATCH`; the Dashboards version is no longer part of the tag. The release workflow builds every supported Dashboards version instead of a single one, and `release_tag` input was dropped in favour of pushing the tag.
-
-## [v1.2.0-osd3.9.0] - 2026-10-27
+## [v1.2.0] - 2026-10-27
 
 ### Added
 
@@ -30,6 +18,9 @@ for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH`; up to
 - Screen-reader description of the Graph View topology (zones, roles, nodes, missing nodes).
 - Unit test suite (`yarn test`) for the formatters, error mapping, node inventory matching and auto-refresh scheduling.
 - Pull requests are built, linted and tested by the release workflow.
+- A release now holds one zip per supported OpenSearch Dashboards version, named `monitoringPlugin-<plugin version>-osd<Dashboards version>.zip`. The supported range is configured in `.github/supported-osd.json` (OpenSearch Dashboards 3.8.0 and later 3.x).
+- Weekly `osd-compat` workflow that builds the latest release against newly published Dashboards versions and attaches the zips to it, listing the compatible versions in the release notes. A version that fails to build gets a GitHub issue.
+- Type-checking against each Dashboards version's own typings in CI.
 
 ### Changed
 
@@ -42,7 +33,7 @@ for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH`; up to
 - Toasts for a failing data source are shown once, not on every auto-refresh.
 - "Last update" only advances when every data source refreshed successfully.
 - API errors keep a meaningful HTTP status (401, 403, 404, 429, 502, 503, 504); a 403 names the OpenSearch privilege the request needs.
-- The release workflow publishes only for a `vX.Y.Z-osdA.B.C` tag or an explicit `release_tag` input, requires the tag to match the manifest and `package.json` versions and a CHANGELOG section, and checks the packaged manifest. Other runs upload the build as a workflow artifact.
+- Releases are tagged `vMAJOR.MINOR.PATCH` and the Dashboards version is no longer part of the tag (this release is tagged `v1.2.0-osd3.9.0`). The release workflow builds every supported Dashboards version instead of a single one, requires the tag to match the manifest and `package.json` versions and a CHANGELOG section, checks each packaged manifest, and no longer takes a `release_tag` input. Other runs upload the build as a workflow artifact.
 
 ### Removed
 
@@ -154,7 +145,7 @@ for the plugin version. Releases are tagged `vMAJOR.MINOR.PATCH`; up to
 - Initial 1.0.0 release, targeting OpenSearch Dashboards 3.6.0.
 
 [Unreleased]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.2.0-osd3.9.0...HEAD
-[v1.2.0-osd3.9.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.9.0...v1.2.0-osd3.9.0
+[v1.2.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.9.0...v1.2.0-osd3.9.0
 [v1.1.1-osd3.9.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.1-osd3.8.0...v1.1.1-osd3.9.0
 [v1.1.1-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.1.0-osd3.8.0...v1.1.1-osd3.8.0
 [v1.1.0-osd3.8.0]: https://github.com/Psych0meter/opensearch-dashboards-plugin-monitoring/compare/v1.0.2-osd3.8.0...v1.1.0-osd3.8.0
